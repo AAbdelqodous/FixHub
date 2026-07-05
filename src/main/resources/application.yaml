@@ -1,0 +1,6 @@
+spring:
+  application:
+    name: fixhub-core
+
+  profiles:
+    active: local

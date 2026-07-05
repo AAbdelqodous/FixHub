@@ -1,0 +1,38 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/fixhub_db
+    username: fixhub
+    password: fixhub
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+    database: postgresql
+
+  mail:
+    host: localhost
+    port: 1025
+    username: mailadmin
+    password: mailadmin
+    properties:
+      mail:
+        smtp:
+          trust: "*"
+        auth: auto
+        starttls:
+          enable: true
+        connectiontimeout: 5000
+        timeout: 3000
+        writetimeout: 5000
+
+application:
+  frontend-url: http://localhost:8081
+  admin:
+    email: admin@fixhub.com
+    password: P@ssw0rd

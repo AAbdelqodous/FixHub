@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  postgres:
+    container_name: fh-postgres
+    image: postgres
+    environment:
+      POSTGRES_USER: fixhub
+      POSTGRES_PASSWORD: fixhub
+      PGDATA: /var/lib/postgresql/data
+      POSTGRES_DB: fixhub_db
+    volumes:
+      - postgres:/var/lib/postgres/data
+    ports:
+      - "5432:5432"
+    networks:
+      - fixhub-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fixhub"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mail-dev:
+    container_name: fh-mail-dev
+    image: maildev/maildev
+    ports:
+      - "1080:1080" # Web UI
+      - "1025:1025" # SMTP Server
+    networks:
+      - fixhub-net
+    restart: unless-stopped
+
+networks:
+  fixhub-net:
+    driver: bridge
+
+volumes:
+  postgres:
+    driver: local
