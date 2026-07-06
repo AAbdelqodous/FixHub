@@ -15,8 +15,10 @@
 Out of scope for this session: entity-specific business logic, security
 configuration for `/api/v1/ping` beyond what Spring Security defaults to,
 `createdBy`/`updatedBy` auditing (no principal/user model exists yet), and
-named/explicit Spring Modulith module boundaries (see ADR 0005 — verification
-only for now).
+named/explicit Spring Modulith module boundaries for any module other than
+`common` (see ADR 0005 — `common` is declared `OPEN` now since it's a shared
+kernel by construction; every other module stays on Modulith's implicit,
+package-based `CLOSED` reading until it needs otherwise).
 
 The `AuditTrigger*` fixtures in `AuditableEntityContractTest` are test-scope
 only and are meant to stay permanently as the contract test's fixture — "don't
@@ -69,6 +71,8 @@ test fixtures that never ship.
       smoke check
 - [x] `ModularityTests` — `ApplicationModules.of(FixhubCoreApplication.class).verify()`
       guard from `spring-modulith-starter-test`
+- [x] `common/package-info.java` — `@ApplicationModule(type = Type.OPEN)`,
+      declared now rather than deferred (see ADR 0005)
 
 ## Definition of Done
 
