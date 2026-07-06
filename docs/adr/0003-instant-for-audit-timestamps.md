@@ -23,10 +23,13 @@ timezone that differs from the app's).
 
 ## Consequences
 
-- Postgres' `timestamp` column only keeps microsecond precision. An `Instant`
-  round-tripped through the database will differ from the original in-memory
-  value in the last few nanoseconds — expected, and tests/comparisons across a
-  save-then-reload boundary should truncate to microseconds before asserting
-  equality.
+- Postgres' `timestamp` column only keeps microsecond precision, and *rounds*
+  to it rather than truncating. An `Instant` fresh out of `Instant.now()` (the
+  value returned by the very insert that set it) will therefore not
+  necessarily equal the same row's value read back from the database.
+  Tests/comparisons across a save-then-reload boundary should compare two
+  reloaded reads against each other, not a pre-insert in-memory value against
+  a reloaded one — truncating one side to microseconds isn't enough, since
+  rounding can carry into the next microsecond.
 - Guarded by `AuditableEntityGuardTest`, which fails the build if either field's
   type or its `@CreatedDate`/`@LastModifiedDate` annotation regresses.
