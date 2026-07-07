@@ -3,7 +3,7 @@ version: '3.8'
 services:
   postgres:
     container_name: fh-postgres
-    image: postgres
+    image: postgres:18
     environment:
       POSTGRES_USER: fixhub
       POSTGRES_PASSWORD: fixhub

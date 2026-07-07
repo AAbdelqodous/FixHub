@@ -3,7 +3,6 @@ spring:
     url: jdbc:postgresql://localhost:5432/fixhub_db
     username: fixhub
     password: fixhub
-    driver-class-name: org.postgresql.Driver
 
   jpa:
     hibernate:
@@ -13,7 +12,6 @@ spring:
     properties:
       hibernate:
         format_sql: true
-    database: postgresql
 
   mail:
     host: localhost
@@ -35,4 +33,4 @@ application:
   frontend-url: http://localhost:8081
   admin:
     email: admin@fixhub.com
-    password: P@ssw0rd
+    password: ${FIXHUB_ADMIN_PASSWORD:changeme-local-only}
