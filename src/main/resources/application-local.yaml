@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/fixhub_db
-    username: fixhub
-    password: fixhub
+    url: jdbc:postgresql://${FIXHUB_DB_HOST:localhost}:${FIXHUB_DB_PORT:5432}/${FIXHUB_DB_NAME:fixhub_db}
+    username: ${FIXHUB_DB_USERNAME:fixhub}
+    password: ${FIXHUB_DB_PASSWORD:fixhub-local}
 
   jpa:
     hibernate:
@@ -14,23 +14,20 @@ spring:
         format_sql: true
 
   mail:
-    host: localhost
-    port: 1025
-    username: mailadmin
-    password: mailadmin
+    host: ${FIXHUB_MAIL_HOST:localhost}
+    port: ${FIXHUB_MAIL_PORT:1025}
     properties:
       mail:
         smtp:
-          trust: "*"
-        auth: auto
-        starttls:
-          enable: true
-        connectiontimeout: 5000
-        timeout: 3000
-        writetimeout: 5000
+          auth: false
+          starttls:
+            enable: false
+          timeout: 3000
+          connectiontimeout: 5000
+          writetimeout: 5000
 
 application:
-  frontend-url: http://localhost:8081
+  frontend-url: ${FIXHUB_FRONTEND_URL:http://localhost:8081}
   admin:
-    email: admin@fixhub.com
+    email: ${FIXHUB_ADMIN_EMAIL:admin@fixhub.com}
     password: ${FIXHUB_ADMIN_PASSWORD:changeme-local-only}

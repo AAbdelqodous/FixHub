@@ -1,41 +1,42 @@
-version: '3.8'
+name: fixhub
 
 services:
   postgres:
-    container_name: fh-postgres
-    image: postgres:18
+    image: postgres:18.4-bookworm
     environment:
-      POSTGRES_USER: fixhub
-      POSTGRES_PASSWORD: fixhub
-      PGDATA: /var/lib/postgresql/data
-      POSTGRES_DB: fixhub_db
-    volumes:
-      - postgres:/var/lib/postgres/data
+      POSTGRES_DB: ${FIXHUB_DB_NAME:-fixhub_db}
+      POSTGRES_USER: ${FIXHUB_DB_USERNAME:-fixhub}
+      POSTGRES_PASSWORD: ${FIXHUB_DB_PASSWORD:-fixhub-local}
     ports:
-      - "5432:5432"
-    networks:
-      - fixhub-net
-    restart: unless-stopped
+      - "${FIXHUB_DB_PORT:-5432}:5432"
+
+    volumes:
+      - postgres-data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U fixhub"]
+      test:
+          [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"
+          ]
       interval: 10s
       timeout: 5s
       retries: 5
 
   mail-dev:
-    container_name: fh-mail-dev
-    image: maildev/maildev
+    image: maildev/maildev:2.2.1
     ports:
-      - "1080:1080" # Web UI
-      - "1025:1025" # SMTP Server
-    networks:
-      - fixhub-net
-    restart: unless-stopped
-
-networks:
-  fixhub-net:
-    driver: bridge
+      - "${FIXHUB_MAIL_UI_PORT:-1080}:1080" # Web UI
+      - "${FIXHUB_MAIL_PORT:-1025}:1025" # SMTP Server
+    healthcheck:
+      test:
+        [
+        "CMD-SHELL",
+        "wget --spider --quiet http://127.0.0.1:1080/healthz || exit 1"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
-  postgres:
-    driver: local
+  postgres-data:
