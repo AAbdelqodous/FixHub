@@ -20,8 +20,7 @@ public class AuditTriggerController {
         this.repository = repository;
     }
 
-    public record Request(String name) {
-    }
+    public record Request(String name) {}
 
     @PostMapping
     AuditTriggerEntity create(@RequestBody Request request) {

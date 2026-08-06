@@ -17,5 +17,4 @@ public enum BusinessErrorCode {
     private final int code;
     private final String message;
     private final HttpStatus httpStatus;
-
 }
