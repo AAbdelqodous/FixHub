@@ -35,3 +35,17 @@ jobs:
 
       - name: Build and verify
         run: ./mvnw --batch-mode --no-transfer-progress verify
+  dependency-review:
+    name: Dependency security review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high

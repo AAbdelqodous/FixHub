@@ -1,5 +1,11 @@
 package com.fixhub.platform.common.error;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,21 +19,16 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
 class GlobalExceptionHandlerTest {
 
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new TestController())
-                .setControllerAdvice(new GlobalExceptionHandler())
-                .build();
+        mockMvc =
+                MockMvcBuilders.standaloneSetup(new TestController())
+                        .setControllerAdvice(new GlobalExceptionHandler())
+                        .build();
     }
 
     @Test
@@ -51,9 +52,10 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void methodArgumentNotValidListsFieldErrors() throws Exception {
-        mockMvc.perform(post("/test/validate")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\": \"\"}"))
+        mockMvc.perform(
+                        post("/test/validate")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"name\": \"\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentType(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.code").value(BusinessErrorCode.VALIDATION_ERROR.name()))
@@ -76,10 +78,8 @@ class GlobalExceptionHandlerTest {
         }
 
         @PostMapping("/validate")
-        void validate(@Valid @RequestBody Payload payload) {
-        }
+        void validate(@Valid @RequestBody Payload payload) {}
     }
 
-    private record Payload(@NotBlank String name) {
-    }
+    private record Payload(@NotBlank String name) {}
 }

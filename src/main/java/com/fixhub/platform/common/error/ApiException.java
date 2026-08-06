@@ -3,7 +3,7 @@ package com.fixhub.platform.common.error;
 import lombok.Getter;
 
 @Getter
-public class ApiException extends RuntimeException{
+public class ApiException extends RuntimeException {
 
     private final BusinessErrorCode errorCode;
 
