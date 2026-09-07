@@ -25,6 +25,16 @@ only and are meant to stay permanently as the contract test's fixture — "don't
 leave throwaway endpoints lying around" applies to production code, not to
 test fixtures that never ship.
 
+## Later extension
+
+[FH-006](006-api-error-conventions.md) extends this completed Session 2 foundation with
+module-owned error codes, full Spring MVC exception coverage, correlation identifiers, and
+durable [API conventions](../design/api-conventions.md) and
+[error-catalogue](../design/error-catalogue.md) references.
+[ADR 0010](../adr/0010-api-error-contract-and-ownership.md) refines ADR 0001 and expands ADR 0002.
+The completed tasks below remain a historical record of the Session 2 implementation rather than
+the current full error contract.
+
 ## Decisions
 
 1. [ADR 0001](../adr/0001-problem-detail-error-contract.md) — every error
