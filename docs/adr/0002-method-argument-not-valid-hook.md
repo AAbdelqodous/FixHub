@@ -3,6 +3,13 @@
 - Status: Accepted
 - Date: 2026-07-06
 
+## Amendment
+
+ADR 0010 expands this decision. FixHub now handles both `MethodArgumentNotValidException` and
+`HandlerMethodValidationException`, mapping request-body and direct method-parameter validation
+failures to the same `VALIDATION_ERROR` contract and structured `errors` list. The original
+deferral of direct parameter validation no longer applies.
+
 ## Context
 
 `ResponseEntityExceptionHandler` exposes two extension points for validation

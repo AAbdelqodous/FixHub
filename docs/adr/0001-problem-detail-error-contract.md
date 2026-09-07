@@ -3,6 +3,14 @@
 - Status: Accepted
 - Date: 2026-07-06
 
+## Amendment
+
+ADR 0010 refines this decision. `ProblemDetail` and stable string error codes remain the public
+contract, but `ApiException` is no longer bound to one common `BusinessErrorCode` enum, and the
+wire code is not required to derive from a Java enum constant name. `common` owns the shared
+error-code contract and framework codes, while each business module owns its domain-specific
+codes. ADR 0010 also adds the required correlation identifier.
+
 ## Context
 
 `ResponseEntityExceptionHandler` already renders framework-level failures (404s,
