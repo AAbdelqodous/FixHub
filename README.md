@@ -4,7 +4,7 @@
 
 FixHub is a modular Spring Boot backend for a maintenance-service marketplace. It is designed to connect customers, service providers, branches, and technicians across the full service journey—from discovery and quotation to booking, work execution, payment, reviews, and communication.
 
-The repository currently contains the completed engineering foundation: module boundaries, database and migration infrastructure, quality gates, API conventions, structured error responses, JPA auditing, and request correlation. Business modules will be added incrementally on top of this baseline.
+The repository contains the completed engineering foundation—module boundaries, database and migration infrastructure, quality gates, API conventions, structured error responses, JPA auditing, and request correlation—plus the first Identity persistence capability for Accounts and Credentials.
 
 ## Current status
 
@@ -24,7 +24,16 @@ Implemented foundation:
 - Maven Enforcer, Spotless, JaCoCo, and GitHub Actions quality gates
 - Architecture decisions, domain model documentation, API conventions, and error catalogue
 
-The next implementation phase begins with Identity persistence: accounts, credentials, verification, sessions, and global roles.
+**FH-010 — Account and credential persistence: complete**
+
+Implemented Identity persistence:
+
+- Account persistence
+- `PASSWORD` Credential persistence
+- Closed Identity module
+- PostgreSQL schema migrations V2 and V3, verified through Testcontainers
+
+Registration, authentication, password hashing configuration, verification, recovery, global roles, sessions, and tokens are not implemented yet.
 
 ## Target domain modules
 
@@ -207,7 +216,8 @@ Clients may supply `X-Correlation-ID` using 1–64 ASCII letters, digits, dots, 
 │   ├── design/              # Domain and API design references
 │   └── specs/               # Implementation specifications
 ├── src/main/java/com/fixhub/platform/
-│   └── common/              # Shared technical kernel
+│   ├── common/              # Shared technical kernel
+│   └── identity/            # Closed module: Account and Credential persistence
 ├── src/main/resources/
 │   └── db/migration/        # Flyway migrations
 ├── src/test/                # Unit, MVC, integration, and architecture tests
@@ -225,6 +235,7 @@ Clients may supply `X-Correlation-ID` using 1–64 ASCII letters, digits, dots, 
 - [Legacy-to-new mapping](docs/design/legacy-to-new-mapping.md)
 - [Common module specification](docs/specs/002-common-module.md)
 - [API and error conventions specification](docs/specs/006-api-error-conventions.md)
+- [Account and credential persistence specification](docs/specs/010-account-credential-persistence.md)
 - [API error contract and ownership ADR](docs/adr/0010-api-error-contract-and-ownership.md)
 
 ## Development workflow
