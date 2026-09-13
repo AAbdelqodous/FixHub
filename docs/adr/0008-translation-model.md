@@ -3,6 +3,340 @@
 - Status: Accepted
 - Date: 2026-08-10
 
+## Amendment — 2026-09-13
+
+This amendment expands ADR 0008 from the original domain-translation model into FixHub's
+platform-wide localization policy. It supersedes the original statements that limit mandatory
+locales and translation completeness to Arabic and English, defer all additional locales, or defer
+effective-locale precedence to FH-006. The rest of the original decision remains in force,
+including normalized translation records, module ownership, stable machine-readable codes and
+identifiers, deterministic fallback, original-language user content, and historical-data rules.
+
+The ADR remains **Accepted**. FH-011 and every later module specification consume this platform
+policy and may define implementation details only within its boundaries.
+
+### Platform launch locales and configuration
+
+FixHub's platform-wide launch locales are:
+
+| Language | Locale | Direction |
+| -------- | ------ | --------- |
+| Arabic   | `ar`   | RTL       |
+| English  | `en`   | LTR       |
+| Hindi    | `hi`   | LTR       |
+| Urdu     | `ur`   | RTL       |
+| Bengali  | `bn`   | LTR       |
+
+The platform configuration contract is:
+
+```properties
+fixhub.localization.supported-locales=ar,en,hi,ur,bn
+fixhub.localization.default-locale=en
+```
+
+These five languages apply to every platform-owned user-facing capability as that capability is
+implemented, including:
+
+- Web and mobile UI.
+- Forms and user-facing validation.
+- Transactional email.
+- Push and SMS notifications.
+- Platform-managed categories and descriptions.
+- User-facing operational messages.
+
+The policy does not require localization of:
+
+- Stable API error codes.
+- Database identifiers or enum values.
+- Logs, metrics, or developer diagnostics.
+- Source code or technical documentation.
+- User-generated reviews, descriptions, or chat messages.
+
+### Architectural ownership
+
+A shared localization foundation owns these cross-cutting capabilities:
+
+- The supported-locale registry.
+- BCP 47 parsing and canonicalization.
+- Deterministic fallback.
+- Text-direction lookup.
+- Localization configuration validation.
+- Translation-completeness validation.
+
+The foundation supplies consistent policy and primitives; it is not a central repository for all
+translated business text. Business translations remain owned by their respective Spring Modulith
+modules and follow those modules' lifecycles and application boundaries. In particular:
+
+- Common owns shared technical messages.
+- Identity owns registration and authentication messages.
+- Booking owns booking messages.
+- Payments owns payment messages.
+- The frontend owns interface navigation and page text.
+
+Other modules follow the same ownership rule for their business vocabulary. No global bundle may
+collect every module's business messages. Domain exceptions and APIs expose stable error codes,
+and application behavior must never branch on, compare, or otherwise depend on translated text.
+
+### Locale resolution
+
+Locale input is parsed as BCP 47, canonicalized, and matched only against the supported-locale
+registry. For any candidate locale, resolution tries an exact supported match first, then a
+supported base-language match, then English. It never selects an arbitrary installed translation.
+The configured platform default, `en`, is the only terminal fallback. Localization must never fall
+back to the JVM default locale, operating-system locale, server locale, container locale, or a
+framework default locale. Implementation must disable system-locale fallback. Spring localization
+configuration must enforce the equivalent of:
+
+```properties
+spring.messages.fallback-to-system-locale=false
+```
+
+For authenticated requests, precedence is:
+
+1. The canonical supported value resolved from `Account.preferredLocale`.
+2. English fallback.
+
+For registration and explicit anonymous operations, precedence is:
+
+1. An explicit, validated locale submitted by the user.
+2. An explicit, previously selected UI locale.
+3. A supported `Accept-Language` match.
+4. English fallback.
+
+A higher-precedence explicit preference is authoritative: after it is syntactically validated, it
+is resolved by exact match, base-language match, then English rather than replaced with a
+lower-precedence inferred preference. Invalid explicit tags fail validation. Valid but unsupported
+BCP 47 values permitted by FH-010 remain valid in `Account.preferredLocale` and resolve to English;
+they are not rewritten to pretend that English was the stored preference.
+
+Although FH-010 normally guarantees a syntactically valid, normalized stored tag, localization
+must treat persisted data as potentially corrupted. A malformed `Account.preferredLocale` must not
+be used for resource or template lookup. It resolves safely to English and records only the bounded
+sanitized reason code `CORRUPTED_PERSISTED_VALUE`. The malformed value must not appear in logs,
+metrics, traces, exception messages, or requester-visible responses. The user-facing operation
+must not fail solely because the persisted localization value is malformed. A syntactically valid
+but unsupported stored tag also resolves to English, but is not necessarily a data-integrity
+failure.
+
+Language must never be inferred from nationality, IP address, location, email address, or phone
+number. `Accept-Language` is an untrusted presentation preference, not evidence of identity or
+location. It cannot influence authentication, authorization, validation rules, Account-existence
+handling, rate limiting, token validation, or any other domain behavior. Changes to a persisted
+preference require the normal authentication, authorization, and CSRF protections applicable to
+that operation.
+
+Resolution examples are:
+
+| Input                | Result             |
+| -------------------- | ------------------ |
+| `ar-KW`              | `ar`               |
+| `en-GB`              | `en`               |
+| `hi-IN`              | `hi`               |
+| `ur-PK`              | `ur`               |
+| `bn-BD`              | `bn`               |
+| `ml-IN`              | `en`               |
+| Invalid explicit tag | Validation failure |
+| Missing preference   | `en`               |
+
+#### `Accept-Language` handling
+
+The following algorithm applies when `Accept-Language` is reached under the precedence above:
+
+1. A missing or blank header resolves to English.
+2. Parse the header as an ordered list of language ranges and quality weights.
+3. If any range or quality parameter makes the header syntactically malformed, ignore the complete
+   header and resolve to English. Do not partially use any remaining range.
+4. Do not return `400` or `406` because of a missing, malformed, or unsupported
+   `Accept-Language` value.
+5. Exclude ranges with `q=0` from matching.
+6. Process the remaining ranges by descending quality weight.
+7. Preserve original header order when quality weights are equal.
+8. For each range, try an exact supported locale and then its supported base language.
+9. The first supported match wins.
+10. A wildcard or exhaustion without a supported match resolves to English.
+11. Duplicate occurrences of the same canonical range are treated as one candidate at the
+    position and quality weight of its first occurrence; later duplicates are ignored and cannot
+    change the result.
+12. Parsing, ordering, canonicalization, case handling, and locale matching must not depend on JVM
+    default-locale behavior.
+
+A quality value follows the RFC 9110 quality-value grammar: it is between `0` and `1`, inclusive,
+and has no more than three digits after the decimal point. Valid examples include `0`, `0.5`,
+`0.125`, `1`, `1.0`, and `1.000`. Negative values, values greater than `1`, nonnumeric values,
+more than three fractional digits, missing values, and duplicate `q` parameters on one range are
+invalid. Any invalid range or quality value makes the complete effective `Accept-Language` field
+malformed. The complete header is ignored, resolution returns English without `400` or `406`, and
+only the bounded reason code `MALFORMED` may be recorded if an operational indicator is needed.
+
+Examples are:
+
+| `Accept-Language`              | Result |
+| ------------------------------ | ------ |
+| Missing                        | `en`   |
+| `ar-KW`                        | `ar`   |
+| `ur-PK, en;q=0.8`              | `ur`   |
+| `ml-IN, hi-IN;q=0.9, en;q=0.5` | `hi`   |
+| `bn-BD;q=0.8, ar-KW;q=0.8`     | `bn`   |
+| `hi;q=0, en;q=0.5`             | `en`   |
+| `*`                            | `en`   |
+| Unsupported ranges only        | `en`   |
+| Malformed header               | `en`   |
+
+Representative quality-value examples are:
+
+| `Accept-Language`      | Result                                        |
+| ---------------------- | --------------------------------------------- |
+| `ar;q=1.0, en;q=0.8`   | `ar`                                          |
+| `hi;q=0.125`           | `hi`                                          |
+| `ur;q=1.001, en;q=0.8` | `en` because the complete header is malformed |
+| `bn;q=abc, ar`         | `en` because the complete header is malformed |
+| `ar;q=-1`              | `en` because the complete header is malformed |
+| `ar;q=`                | `en` because the complete header is malformed |
+
+#### Locale alias policy
+
+Launch resolution performs BCP 47 syntactic validation and normalizes ASCII case according to the
+tag structure. It does not expand, substitute, or accept deprecated, legacy, grandfathered, or
+implementation-specific aliases. JVM, CLDR, framework, locale-library, and operating-system alias
+mappings must not be used to reach a supported locale. Only a documented exact supported tag or
+its explicit primary-language fallback may select a supported locale. Three-letter language
+identifiers must not be treated as aliases for the approved two-letter values. Any future alias
+requires explicit addition to this platform policy and deterministic tests.
+
+Examples are:
+
+| Input                                   | Result                                                                      |
+| --------------------------------------- | --------------------------------------------------------------------------- |
+| `AR-kw`                                 | `ar`                                                                        |
+| `en-GB`                                 | `en`                                                                        |
+| `eng`                                   | `en` fallback only because it is unsupported—not because it aliases to `en` |
+| Library-specific alias                  | `en` fallback                                                               |
+| Deprecated tag not explicitly approved | `en` fallback                                                               |
+
+### Security requirements
+
+1. Locale input is untrusted and must be strictly parsed, canonicalized, and resolved through the
+   supported-locale allowlist.
+2. Raw locale input must never construct resource names, template paths, or filesystem paths.
+3. Localization must never change authentication, authorization, rate limiting, token validation,
+   password policy, HTTP status, or stable error codes.
+4. Enumeration-resistant responses must remain equivalent in every language.
+5. Translated HTML and dynamic template values require contextual escaping.
+6. Arabic and Urdu require RTL rendering. Dynamic email addresses, URLs, identifiers, and other
+   LTR values require bidirectional isolation when embedded in RTL content.
+7. Logs remain language-neutral and structured. Raw or unvalidated locale request fields, complete
+   or partial `Accept-Language` values, malformed values, and unvalidated unsupported values must
+   never be reflected in error responses, `ProblemDetail`, diagnostic response fields, response
+   headers, logs, distributed traces or tracing attributes, metrics or metric labels, or exception
+   messages. They must not be echoed in a success response; the sole response-body exception is the
+   authenticated persisted-Account representation defined below. Correlation identifiers may
+   remain in logs but must not be introduced as metric labels.
+8. Only the resolved allowlisted values `ar`, `en`, `hi`, `ur`, and `bn` may drive resource or
+   template selection, `Content-Language`, localization-related telemetry, or rendering behavior.
+   Bounded sanitized reason codes `MISSING`, `MALFORMED`, `UNSUPPORTED`, and
+   `CORRUPTED_PERSISTED_VALUE` remain permitted as non-locale diagnostic categories.
+9. Responses varying by `Accept-Language` must use appropriate cache controls, including
+   `Vary: Accept-Language`.
+10. Translation files must never contain real passwords, tokens, credentials, or other
+    production-like secrets.
+11. Security-sensitive translations require qualified human review. The reviewer must be competent
+    in both the target language and the security meaning, or a target-language reviewer must be
+    paired with a security reviewer. Automated translation or automated key validation alone is
+    insufficient. Review must verify that a translation does not reveal Account existence, change
+    required security instructions, weaken warnings, alter token or password meaning, introduce
+    unsafe HTML, or change the semantics of stable error codes.
+12. Asynchronous jobs must carry a canonical resolved locale explicitly and must not depend on
+    thread-local request-locale state.
+
+#### Persisted Account preference representation
+
+The stored preference and effective rendering locale are separate values:
+
+```text
+preferredLocale = canonical persisted user preference
+resolvedLocale  = one of ar, en, hi, ur, bn used for rendering
+```
+
+A canonical, syntactically validated, persisted `Account.preferredLocale` may be returned even when
+it is not one of the five rendering locales, but only when all of these conditions hold:
+
+1. An approved API specification explicitly includes `preferredLocale`.
+2. The response is authenticated and properly authorized to access that Account data.
+3. The returned value comes from the validated persisted Account field, not directly from raw
+   request input.
+4. It is returned as Account profile data, not as an error, diagnostic, header, telemetry value, or
+   rendering decision.
+5. Resource and template selection still use the separately resolved allowlisted locale.
+6. Existing privacy, authorization, and response-contract rules are satisfied.
+
+For example:
+
+```text
+Stored preferredLocale: ml-IN
+Resolved rendering locale: en
+Authorized Account response may expose preferredLocale: ml-IN
+Template/resource selection uses: en
+```
+
+This exception does not permit echoing raw input; returning raw `Accept-Language`; exposing the
+value in `ProblemDetail`, another error or diagnostic, or a generic registration response; using an
+unsupported value as a resource or template name; logging or tracing the persisted unsupported
+value; or adding arbitrary locale values to metrics.
+
+### Translation quality gates
+
+Automated validation is mandatory for each implemented platform-owned user-facing capability and
+must cover:
+
+- Key parity across all five mandatory languages.
+- Required template presence.
+- UTF-8 correctness.
+- Placeholder parity.
+- Missing and unknown keys.
+- Correct `lang` and `dir` metadata.
+- Deterministic English fallback.
+- Safe HTML rendering.
+- Secret-safe fixtures and assertions.
+
+A missing mandatory translation must fail the appropriate build or startup validation rather than
+silently displaying a translation key. Module-local validation may enforce additional
+domain-specific quality rules but may not weaken these platform gates.
+
+### Localized domain content
+
+Future platform-managed multilingual content uses normalized translation records keyed by entity
+and locale. It must not add one database column per language. The specification for the first
+module that needs localized persisted content will define the exact tables, constraints, and
+migrations while retaining ownership in that module.
+
+User-generated content remains in its original language. Automatic translation is outside this
+decision.
+
+### Deferred expansion
+
+Additional language packs for the wider Middle East, South Africa, other GCC communities, or any
+other audience require measured demand, identified translation ownership, and explicit approval.
+They are not launch requirements.
+
+### Superseded text and documentation follow-up
+
+The original Context, Decision, Alternatives considered, and Consequences sections below are
+retained as decision history. Where they say that only Arabic and English are required, that
+additional locales are deferred, or that FH-006 determines effective-locale precedence, this
+dated amendment governs instead.
+
+The following documentation requires a later consistency update; it is deliberately not changed
+by this ADR-only amendment:
+
+- `docs/design/api-conventions.md` and `docs/specs/006-api-error-conventions.md` currently give a
+  supported `Accept-Language` value precedence over an authenticated Account preference.
+- `docs/design/legacy-to-new-mapping.md` and `docs/design/erd.md` still describe Arabic and English
+  as the complete required locale set for public domain content.
+- The proposed `docs/specs/011-registration-and-email-verification.md` defines a separate
+  fifteen-language email baseline, Identity-specific locale configuration, preferred-locale-only
+  selection, and Chinese-specific resolution rules. FH-011 must be reconciled with this
+  five-language platform policy before approval.
+
 ## Context
 
 FixHub launches in Kuwait with complete Arabic and English experiences. Categories, Services,
