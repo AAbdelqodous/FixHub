@@ -325,17 +325,14 @@ retained as decision history. Where they say that only Arabic and English are re
 additional locales are deferred, or that FH-006 determines effective-locale precedence, this
 dated amendment governs instead.
 
-The following documentation requires a later consistency update; it is deliberately not changed
-by this ADR-only amendment:
+Documentation alignment status:
 
-- `docs/design/api-conventions.md` and `docs/specs/006-api-error-conventions.md` currently give a
-  supported `Accept-Language` value precedence over an authenticated Account preference.
-- `docs/design/legacy-to-new-mapping.md` and `docs/design/erd.md` still describe Arabic and English
-  as the complete required locale set for public domain content.
-- The proposed `docs/specs/011-registration-and-email-verification.md` defines a separate
-  fifteen-language email baseline, Identity-specific locale configuration, preferred-locale-only
-  selection, and Chinese-specific resolution rules. FH-011 must be reconciled with this
-  five-language platform policy before approval.
+- API conventions were aligned with ADR 0008 on 2026-09-14.
+- FH-006 was aligned with ADR 0008 on 2026-09-14.
+- The legacy mapping was aligned with ADR 0008 on 2026-09-14.
+- The ERD was aligned with ADR 0008 on 2026-09-14.
+- The proposed `docs/specs/011-registration-and-email-verification.md` remains pending and must be
+  reconciled with this five-language platform policy before approval.
 
 ## Context
 

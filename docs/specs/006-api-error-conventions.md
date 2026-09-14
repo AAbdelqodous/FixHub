@@ -95,16 +95,25 @@ The current implementation does not yet provide:
 
 ### Locale resolution
 
-- Locale identifiers are normalized BCP 47 language tags as established by ADR 0008.
-- A valid supported `Accept-Language` request preference takes precedence.
-- When no supported request preference is supplied, an authenticated Account preference may be
-  used after Identity defines it.
-- Otherwise, the configured platform-default locale is used.
-- Localized domain content then follows ADR 0008: exact locale, base language, platform default,
-  and finally the field's documented missing-content policy.
-- Error `code` values, identifiers, and machine-readable enum values are never translated.
-- The server's `detail` and validation messages are diagnostic defaults; clients translate stable
-  codes for presentation.
+ADR 0008 is authoritative for supported rendering locales, locale parsing, alias handling,
+deterministic fallback, text direction, security, and translation completeness.
+
+For authenticated requests, resolve the locale from the canonical persisted
+`Account.preferredLocale`, then fall back to English. For registration and applicable anonymous
+presentation, use an explicit validated user selection, then an explicit previously selected UI
+locale, then a supported `Accept-Language` match, then English.
+
+`Accept-Language` is an optional, untrusted presentation preference. Detailed parsing, alias,
+fallback, malformed-input, telemetry, and resource-selection requirements defer to ADR 0008. A
+response whose representation actually varies by `Accept-Language` uses appropriate cache
+controls, including `Vary: Accept-Language`. Raw locale values are not reflected in errors or
+diagnostics.
+
+Error `code` values, HTTP statuses, identifiers, machine-readable enum values, and domain behavior
+remain locale-independent. The server's `detail` and validation messages are diagnostic defaults;
+clients use stable error codes for localized presentation. Translated text never drives client or
+server behavior. Localized domain content follows ADR 0008 and the field's documented
+missing-content policy.
 
 ### Idempotency and concurrency
 

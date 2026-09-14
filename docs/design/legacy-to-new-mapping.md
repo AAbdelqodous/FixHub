@@ -114,7 +114,7 @@ approved task specifications and required ADRs.
 | `user.Token` and `TokenRepository` | Expiring verification or recovery token behavior | Identity — purpose-specific security tokens and sessions | `SPLIT`, `REDESIGN` | FH-011 owns email-verification tokens, FH-012 owns access and refresh/session lifecycle, and FH-013 owns recovery tokens. Store only protected token material; every purpose has a distinct lifecycle and storage contract defined by its approved task specification |
 | `security.JwtService`, `JwtFilter`, `SecurityConfig`, and `UserDetailsServiceImpl` | Existing authentication flow and protected-route scenarios | Identity/security adapters | `REFERENCE ONLY` | Do not copy the custom JWT implementation. FH-012 owns Spring Security authentication, JWT access tokens, and refresh sessions. FH-014 owns the authorization foundation and integrates Provider permission resolution only through the Provider-owned FH-020 contract |
 | `role.Role`, `RoleRepository`, `User.roles`, and `UserType` | Distinction between customer, administrator, owner, and staff behavior | Identity — Global Role; Provider — Membership and Provider Role Grant | `SPLIT`, `REDESIGN` | FH-014 owns global roles and application-level authorization. FH-020 owns `OWNER`, `BRANCH_MANAGER`, `RECEPTIONIST`, `TECHNICIAN`, and `ACCOUNTANT` as Provider participation roles; FH-014 must not duplicate them in Identity |
-| `user.Language` and `User.preferredLanguage` | Remembering an Account's preferred presentation language | Identity — preferred normalized locale | `REDESIGN` | Replace fixed language enums with normalized BCP 47 locale identifiers while retaining `ar` and `en` as MVP locales. Apply ADR 0008 and FH-006/FH-010 |
+| `user.Language` and `User.preferredLanguage` | Remembering an Account's preferred presentation language | Identity — preferred normalized locale | `REDESIGN` | Replace fixed language enums with normalized BCP 47 locale identifiers. The platform launch rendering locales are `ar`, `en`, `hi`, `ur`, and `bn`; additional languages remain deferred under ADR 0008. FH-010 continues to permit any valid normalized BCP 47 Account preference, with unsupported values resolving to English for rendering |
 | Notification flags, FCM token, and push token stored on `User` | Per-account communication choices and delivery destinations | Identity — Account reference; Communication — Notification Preference and delivery registration | `SPLIT`, `REDESIGN` | Identity retains the Account and preferred locale; Communication owns notification preferences and delivery state. Detailed channels and device registration are specified later |
 | `User.totalBookings`, `totalReviews`, and `helpfulReviews` | Profile statistics | Owning business modules and derived projections | `RETIRE` as Account state | These values must be derived from authoritative Booking and Trust facts or maintained as rebuildable projections, not mutable Account counters |
 | `email.EmailService` and `EmailTemplateName` | Email delivery scenarios | Identity use cases through a delivery port; Communication delivery records where applicable | `REDESIGN` | FH-011 owns verification-email delivery and FH-013 owns recovery-email delivery. Each specification must separate business commands, templates, outbox reliability, and provider adapters without preselecting those designs here |
@@ -372,8 +372,11 @@ these rules:
   acceptance.
 - Convert each valid legacy maintenance center into a `CENTER` Provider, at least one Branch, and
   explicit owner Membership. Do not infer individual Providers from incomplete center data.
-- Convert `nameAr`, `nameEn`, and similar fields into normalized `ar` and `en` translation records.
-  Incomplete required translations prevent public activation.
+- Convert `nameAr`, `nameEn`, and similar legacy fields into normalized translation records. Those
+  source columns do not define the target launch locale set: platform-managed public content
+  requires complete `ar`, `en`, `hi`, `ur`, and `bn` translations before activation. Additional
+  languages remain deferred under ADR 0008. User-generated legacy text remains in its original
+  language and is not translated automatically.
 - Convert center services and pricing only after the target Category, Service, Branch, Offering,
   fulfillment, and price semantics are resolved.
 - Preserve legacy Booking and quote identifiers as migration references while generating target

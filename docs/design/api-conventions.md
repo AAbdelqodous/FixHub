@@ -203,16 +203,33 @@ contract. Modules must not independently create incompatible page envelopes in t
 
 ## Locale and localized content
 
-- Locale identifiers are normalized BCP 47 language tags.
-- A valid supported `Accept-Language` preference takes precedence.
-- An authenticated Account preference may be used when Identity defines it and no supported
-  request preference was supplied.
-- Otherwise, FixHub uses the configured platform-default locale.
-- Localized domain content follows ADR 0008: exact locale, base language, platform default, then
-  the field's documented missing-content behavior.
-- Error codes, identifiers, enum values, and other machine-readable values are never translated.
-- Server error details are safe diagnostic defaults; clients translate stable error codes for
-  presentation.
+[ADR 0008](../adr/0008-translation-model.md) is authoritative for supported rendering locales,
+locale parsing, alias handling, deterministic fallback, text direction, security, and translation
+completeness.
+
+For authenticated requests, locale precedence is:
+
+1. The canonical supported locale resolved from persisted `Account.preferredLocale`.
+2. English.
+
+For registration and applicable anonymous presentation, locale precedence is:
+
+1. An explicit validated user selection.
+2. An explicit previously selected UI locale.
+3. A supported `Accept-Language` match.
+4. English.
+
+`Accept-Language` is an optional, untrusted presentation preference. Detailed parsing, alias,
+fallback, malformed-input, telemetry, and resource-selection rules remain defined only by ADR
+0008. A response whose representation actually varies by `Accept-Language` uses appropriate cache
+controls, including `Vary: Accept-Language`.
+
+Stable error codes, HTTP statuses, identifiers, enum values, and domain behavior are
+locale-independent. Server error details remain safe diagnostic defaults; clients use stable error
+codes for localized presentation. Translated text must never drive client or server behavior, and
+raw locale values must not be reflected in errors or diagnostics.
+
+Localized domain content follows ADR 0008 and the field's documented missing-content behavior.
 
 The response contract does not add parallel fields such as `nameAr` and `nameEn` for every locale.
 An endpoint that intentionally returns multiple translations must define that administrative
@@ -307,7 +324,7 @@ credentials, tokens, filesystem paths, or unrestricted rejected values.
 |---|---|---|
 | `Accept` | Request | Select an acceptable response representation |
 | `Content-Type` | Request and response | Identify the representation media type |
-| `Accept-Language` | Request | Express preferred supported locales |
+| `Accept-Language` | Request | Optional, untrusted presentation preference resolved under ADR 0008 |
 | `Location` | Response | Identify a newly created resource when available |
 | `X-Correlation-ID` | Request and response | Propagate or return diagnostic correlation |
 | `Allow` | Response | List supported methods for a method-not-allowed response |
