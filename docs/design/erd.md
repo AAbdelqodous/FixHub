@@ -21,11 +21,28 @@ This ERD follows these authoritative decisions:
 - ADR 0006 defines one canonical Provider with `CENTER` and `INDIVIDUAL` types.
 - ADR 0007 requires every Provider to have a Branch and defines Provider- and Branch-scoped
   Membership authorization.
-- ADR 0008 defines separate locale-based translation records instead of language-specific columns.
+- ADR 0008 defines the platform localization policy and separate locale-based translation records
+  instead of language-specific columns.
 - ADR 0009 defines persisted, context-authorized Conversations and Messages before real-time
   transport.
 
 If this ERD conflicts with an accepted ADR, the ADR takes precedence and the ERD must be corrected.
+
+The platform launch rendering locales are:
+
+| Language | Locale | Direction |
+| -------- | ------ | --------- |
+| Arabic   | `ar`   | RTL       |
+| English  | `en`   | LTR       |
+| Hindi    | `hi`   | LTR       |
+| Urdu     | `ur`   | RTL       |
+| Bengali  | `bn`   | LTR       |
+
+FH-010 permits `Account.preferredLocale` to contain any syntactically valid, normalized BCP 47
+value. A valid unsupported preference resolves to English for rendering and is not data
+corruption. ADR 0008 remains authoritative for locale resolution and the future direction toward
+module-owned normalized translation records; this ERD does not prescribe localization tables,
+migrations, or search behavior.
 
 ## Modeling rules
 
@@ -149,8 +166,8 @@ The following business rules refine the cardinalities:
   Translation Record concept, not prescribed physical tables.
 - Each translation belongs to exactly one translated parent and one normalized locale.
 - A parent has at most one translation for a given locale.
-- Active public Categories, Services, and Provider Offerings require complete Arabic and English
-  translations.
+- Active public Categories, Services, and Provider Offerings require complete `ar`, `en`, `hi`,
+  `ur`, and `bn` translations.
 - Every Provider Offering identifies exactly one Provider, one Branch belonging to that Provider,
   and one Service.
 - A Provider, Branch, or Service may participate in zero or more Provider Offerings.

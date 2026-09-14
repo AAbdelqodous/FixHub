@@ -105,7 +105,7 @@ imply that every domain state permits the operation.
 |---:|---|
 | `200 OK` | Successful query or command returning a representation |
 | `201 Created` | A resource was created; include `Location` when a stable URI is available |
-| `202 Accepted` | Processing was accepted asynchronously and its status can be observed |
+| `202 Accepted` | Processing was accepted for asynchronous or intentionally noncommittal handling; expose a monitor only when the endpoint contract safely defines one |
 | `204 No Content` | A successful operation has no response representation |
 | `400 Bad Request` | Validation, parsing, missing-input, or type-conversion failure |
 | `401 Unauthorized` | Authentication is missing or invalid |
@@ -114,11 +114,19 @@ imply that every domain state permits the operation.
 | `405 Method Not Allowed` | The resource does not support the HTTP method |
 | `406 Not Acceptable` | No acceptable response representation is available |
 | `409 Conflict` | A module-owned business conflict prevents the operation |
+| `413 Content Too Large` | The request content exceeds the endpoint's documented byte limit |
 | `415 Unsupported Media Type` | The request representation is unsupported |
 | `500 Internal Server Error` | An unexpected server failure occurred |
 
 An endpoint must not return `200 OK` with an error object. Errors use the appropriate non-success
 status and the ProblemDetail contract.
+
+An enumeration-resistant operation may intentionally return an empty `202 Accepted` without a
+`Location` header, monitor resource, or response representation when an accepted ADR and the owning
+endpoint specification require the caller not to distinguish existence, state, persistence, or
+delivery outcomes. FH-011 registration and verification-email resend use this exception under ADR
+0011. The exception does not make an actual error eligible for an undocumented empty success or
+error response.
 
 ## Media types and JSON
 
@@ -131,8 +139,9 @@ status and the ProblemDetail contract.
 - Nullability and omission behavior are documented for every optional public field.
 - Internal entity fields, audit implementation details, and bidirectional persistence graphs are
   not serialized automatically.
-- Unknown request fields follow the configured platform policy consistently; endpoints must not
-  silently implement different policies.
+- Unknown fields in public JSON request objects are rejected globally and use the safe
+  `MALFORMED_REQUEST` ProblemDetail contract. Endpoints must not accept unknown fields or install a
+  private deserialization policy that differs from this platform rule.
 
 ## Identifiers and stable values
 
@@ -203,16 +212,33 @@ contract. Modules must not independently create incompatible page envelopes in t
 
 ## Locale and localized content
 
-- Locale identifiers are normalized BCP 47 language tags.
-- A valid supported `Accept-Language` preference takes precedence.
-- An authenticated Account preference may be used when Identity defines it and no supported
-  request preference was supplied.
-- Otherwise, FixHub uses the configured platform-default locale.
-- Localized domain content follows ADR 0008: exact locale, base language, platform default, then
-  the field's documented missing-content behavior.
-- Error codes, identifiers, enum values, and other machine-readable values are never translated.
-- Server error details are safe diagnostic defaults; clients translate stable error codes for
-  presentation.
+[ADR 0008](../adr/0008-translation-model.md) is authoritative for supported rendering locales,
+locale parsing, alias handling, deterministic fallback, text direction, security, and translation
+completeness.
+
+For authenticated requests, locale precedence is:
+
+1. The canonical supported locale resolved from persisted `Account.preferredLocale`.
+2. English.
+
+For registration and applicable anonymous presentation, locale precedence is:
+
+1. An explicit validated user selection.
+2. An explicit previously selected UI locale.
+3. A supported `Accept-Language` match.
+4. English.
+
+`Accept-Language` is an optional, untrusted presentation preference. Detailed parsing, alias,
+fallback, malformed-input, telemetry, and resource-selection rules remain defined only by ADR
+0008. A response whose representation actually varies by `Accept-Language` uses appropriate cache
+controls, including `Vary: Accept-Language`.
+
+Stable error codes, HTTP statuses, identifiers, enum values, and domain behavior are
+locale-independent. Server error details remain safe diagnostic defaults; clients use stable error
+codes for localized presentation. Translated text must never drive client or server behavior, and
+raw locale values must not be reflected in errors or diagnostics.
+
+Localized domain content follows ADR 0008 and the field's documented missing-content behavior.
 
 The response contract does not add parallel fields such as `nameAr` and `nameEn` for every locale.
 An endpoint that intentionally returns multiple translations must define that administrative
@@ -307,7 +333,7 @@ credentials, tokens, filesystem paths, or unrestricted rejected values.
 |---|---|---|
 | `Accept` | Request | Select an acceptable response representation |
 | `Content-Type` | Request and response | Identify the representation media type |
-| `Accept-Language` | Request | Express preferred supported locales |
+| `Accept-Language` | Request | Optional, untrusted presentation preference resolved under ADR 0008 |
 | `Location` | Response | Identify a newly created resource when available |
 | `X-Correlation-ID` | Request and response | Propagate or return diagnostic correlation |
 | `Allow` | Response | List supported methods for a method-not-allowed response |

@@ -19,6 +19,10 @@ owns its domain errors; `common` owns only framework and cross-cutting errors.
   rendering, and correlation identifiers.
 - [API conventions](api-conventions.md) define the shared public HTTP rules.
 - [FH-006](../specs/006-api-error-conventions.md) defines the implementation and acceptance scope.
+- [ADR 0011](../adr/0011-registration-password-and-email-verification-security.md) defines the
+  accepted registration and email-verification security boundary.
+- The proposed [FH-011 specification](../specs/011-registration-and-email-verification.md) defines
+  the owning endpoint semantics for its reserved Identity codes without authorizing implementation.
 
 If this catalogue conflicts with ADR 0010, ADR 0010 takes precedence and this document must be
 corrected.
@@ -89,6 +93,7 @@ maps it to one of its own documented semantics at its application boundary.
 | `ENDPOINT_NOT_FOUND` | `404 Not Found` | `API endpoint was not found` |
 | `METHOD_NOT_ALLOWED` | `405 Method Not Allowed` | `HTTP method is not allowed` |
 | `NOT_ACCEPTABLE` | `406 Not Acceptable` | `Requested response representation is not available` |
+| `REQUEST_TOO_LARGE` | `413 Content Too Large` | `Request body exceeds the allowed size` |
 | `UNSUPPORTED_MEDIA_TYPE` | `415 Unsupported Media Type` | `Request media type is not supported` |
 | `INTERNAL_ERROR` | `500 Internal Server Error` | `An unexpected error occurred` |
 
@@ -117,6 +122,16 @@ these values.
   syntactically invalid JSON or an unreadable value.
 - Do not use when: Parsing succeeded and Bean Validation or a domain rule rejected the input.
 - Safety: Parser exception messages and rejected sensitive content are not returned.
+
+### `REQUEST_TOO_LARGE`
+
+- Owner: `common`
+- Status: `413 Content Too Large`
+- Default detail: `Request body exceeds the allowed size`
+- Use when: The actual request body exceeds the owning endpoint's documented byte limit, including
+  streamed or chunked input whose declared length is absent or inaccurate.
+- Safety: Do not return the body, its measured content, parser diagnostics, or rejected values.
+- Do not use when: The media type is unsupported or the body is within the byte limit but malformed.
 
 ### `MISSING_PARAMETER`
 
@@ -210,6 +225,82 @@ and tested; it is not achieved by relabeling `FORBIDDEN`.
 - Safety: Return only the generic default detail; never return the raw exception message.
 - Do not use as: A shortcut for known domain, infrastructure, or validation failures that require a
   documented mapping.
+
+## Identity FH-011 catalogue summary
+
+These codes are owned by the closed Identity module and are introduced by the proposed FH-011
+registration and email-verification contract. Their presence in this catalogue does not approve
+FH-011 or authorize implementation.
+
+| Code | HTTP status | Default detail | Owner |
+|---|---:|---|---|
+| `IDENTITY_PASSWORD_BLOCKED` | `400 Bad Request` | `Password is not permitted` | `identity` |
+| `IDENTITY_REGISTRATION_RATE_LIMITED` | `429 Too Many Requests` | `Registration rate limit exceeded` | `identity` |
+| `IDENTITY_REGISTRATION_UNAVAILABLE` | `503 Service Unavailable` | `Registration is temporarily unavailable` | `identity` |
+| `IDENTITY_VERIFICATION_TOKEN_INVALID` | `400 Bad Request` | `Verification token is invalid` | `identity` |
+| `IDENTITY_VERIFICATION_RATE_LIMITED` | `429 Too Many Requests` | `Verification rate limit exceeded` | `identity` |
+| `IDENTITY_VERIFICATION_UNAVAILABLE` | `503 Service Unavailable` | `Verification is temporarily unavailable` | `identity` |
+
+### `IDENTITY_PASSWORD_BLOCKED`
+
+- Owner: `identity`
+- Status: `400 Bad Request`
+- Default detail: `Password is not permitted`
+- Use when: FH-011 rejects the complete NFC-normalized registration password under its approved
+  local compromised-password policy before Account lookup.
+- Safety: Do not expose the password, lookup digest, matching source entry, occurrence count, or
+  Account-existence information.
+
+### `IDENTITY_REGISTRATION_RATE_LIMITED`
+
+- Owner: `identity`
+- Status: `429 Too Many Requests`
+- Default detail: `Registration rate limit exceeded`
+- Use when: An FH-011 registration email, origin, or global abuse bucket rejects the request.
+- Required protocol behavior: Include the FH-011 `Retry-After` value.
+- Safety: Do not reveal the limiting identifier, bucket, count, Account existence, or Account state.
+
+### `IDENTITY_REGISTRATION_UNAVAILABLE`
+
+- Owner: `identity`
+- Status: `503 Service Unavailable`
+- Default detail: `Registration is temporarily unavailable`
+- Use when: FH-011 registration cannot safely evaluate required infrastructure, trusted-origin
+  input, or bounded Argon2id admission capacity.
+- Required protocol behavior: Include the FH-011 `Retry-After` value.
+- Safety: The ProblemDetail remains sanitized and must not reveal the password, email, Account
+  existence, capacity value, forwarding data, or internal failure.
+
+### `IDENTITY_VERIFICATION_TOKEN_INVALID`
+
+- Owner: `identity`
+- Status: `400 Bad Request`
+- Default detail: `Verification token is invalid`
+- Use when: An FH-011 verification token is unknown, expired, superseded, invalidated, otherwise
+  ineligible, or no longer retained after cleanup.
+- Safety: Do not distinguish the token's terminal reason, linked Account existence, or Account state.
+
+### `IDENTITY_VERIFICATION_RATE_LIMITED`
+
+- Owner: `identity`
+- Status: `429 Too Many Requests`
+- Default detail: `Verification rate limit exceeded`
+- Use when: An FH-011 verification-email resend or token-consumption abuse bucket rejects the
+  request.
+- Required protocol behavior: Include the FH-011 `Retry-After` value.
+- Safety: Do not reveal the limiting identifier, bucket, count, token state, Account existence, or
+  Account state.
+
+### `IDENTITY_VERIFICATION_UNAVAILABLE`
+
+- Owner: `identity`
+- Status: `503 Service Unavailable`
+- Default detail: `Verification is temporarily unavailable`
+- Use when: FH-011 resend or token consumption cannot safely evaluate required infrastructure or
+  trusted-origin input.
+- Required protocol behavior: Include the FH-011 `Retry-After` value.
+- Safety: The ProblemDetail remains sanitized and must not reveal an email, token, Account state,
+  forwarding data, delivery outcome, or internal failure.
 
 ## ProblemDetail representation
 
@@ -347,8 +438,14 @@ FH-006 tests verify:
 - Protocol headers survive framework exception mapping.
 - Correlation identifiers match across the response header, ProblemDetail, and diagnostic context.
 
-Future module tests add their catalogue to the global uniqueness and documentation checks when the
-module publishes its first public errors.
+A repository-wide automated catalogue-consistency test must include every implemented common and
+module-owned public code. It fails for a missing, unknown, duplicate, renamed, or re-owned code and
+for any status or default-detail difference between the implementation and this catalogue. Proposed
+codes that are catalogued before implementation, including FH-011's Identity codes, become mandatory
+in that test when their owning specification authorizes implementation.
+
+Each module's tests add its implemented catalogue to the global uniqueness and documentation checks
+when the module publishes its first public errors.
 
 ## Change control
 

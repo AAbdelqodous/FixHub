@@ -68,6 +68,11 @@ The current implementation does not yet provide:
 - Empty successful commands use `204 No Content` when no response representation is required.
 - Creation commands use `201 Created` and provide a `Location` header when a stable resource URI is
   available.
+- Unknown fields in public JSON request objects are rejected globally as `MALFORMED_REQUEST`; an
+  endpoint must not install a private deserialization policy.
+- An accepted enumeration-resistant endpoint contract may use an empty `202 Accepted` without a
+  monitor, `Location`, or response representation. The owning ADR and endpoint specification must
+  define that exception; it does not permit undocumented empty error responses.
 
 ### Identifiers, dates, and money
 
@@ -95,16 +100,25 @@ The current implementation does not yet provide:
 
 ### Locale resolution
 
-- Locale identifiers are normalized BCP 47 language tags as established by ADR 0008.
-- A valid supported `Accept-Language` request preference takes precedence.
-- When no supported request preference is supplied, an authenticated Account preference may be
-  used after Identity defines it.
-- Otherwise, the configured platform-default locale is used.
-- Localized domain content then follows ADR 0008: exact locale, base language, platform default,
-  and finally the field's documented missing-content policy.
-- Error `code` values, identifiers, and machine-readable enum values are never translated.
-- The server's `detail` and validation messages are diagnostic defaults; clients translate stable
-  codes for presentation.
+ADR 0008 is authoritative for supported rendering locales, locale parsing, alias handling,
+deterministic fallback, text direction, security, and translation completeness.
+
+For authenticated requests, resolve the locale from the canonical persisted
+`Account.preferredLocale`, then fall back to English. For registration and applicable anonymous
+presentation, use an explicit validated user selection, then an explicit previously selected UI
+locale, then a supported `Accept-Language` match, then English.
+
+`Accept-Language` is an optional, untrusted presentation preference. Detailed parsing, alias,
+fallback, malformed-input, telemetry, and resource-selection requirements defer to ADR 0008. A
+response whose representation actually varies by `Accept-Language` uses appropriate cache
+controls, including `Vary: Accept-Language`. Raw locale values are not reflected in errors or
+diagnostics.
+
+Error `code` values, HTTP statuses, identifiers, machine-readable enum values, and domain behavior
+remain locale-independent. The server's `detail` and validation messages are diagnostic defaults;
+clients use stable error codes for localized presentation. Translated text never drives client or
+server behavior. Localized domain content follows ADR 0008 and the field's documented
+missing-content policy.
 
 ### Idempotency and concurrency
 
@@ -141,12 +155,17 @@ The common catalogue initially covers:
 | `ENDPOINT_NOT_FOUND` | 404 | No API resource or route matches the request |
 | `METHOD_NOT_ALLOWED` | 405 | The HTTP method is not supported for the resource |
 | `NOT_ACCEPTABLE` | 406 | No acceptable response representation is available |
+| `REQUEST_TOO_LARGE` | 413 | The request body exceeds the endpoint's documented byte limit |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | The request media type is unsupported |
 | `INTERNAL_ERROR` | 500 | An unexpected server failure occurred |
 
 Authentication and access-denied rendering are implemented with Spring Security in its owning
 task because those failures may occur before MVC controller advice. FH-006 reserves their stable
 codes and documents the required contract.
+
+The authoritative error catalogue also records module-owned codes when a module publishes a public
+API. FH-011's Identity codes remain Identity-owned and use the shared ProblemDetail renderer; FH-006
+does not move them into `CommonErrorCode`.
 
 ## ProblemDetail contract
 
