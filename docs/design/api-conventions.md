@@ -105,7 +105,7 @@ imply that every domain state permits the operation.
 |---:|---|
 | `200 OK` | Successful query or command returning a representation |
 | `201 Created` | A resource was created; include `Location` when a stable URI is available |
-| `202 Accepted` | Processing was accepted asynchronously and its status can be observed |
+| `202 Accepted` | Processing was accepted for asynchronous or intentionally noncommittal handling; expose a monitor only when the endpoint contract safely defines one |
 | `204 No Content` | A successful operation has no response representation |
 | `400 Bad Request` | Validation, parsing, missing-input, or type-conversion failure |
 | `401 Unauthorized` | Authentication is missing or invalid |
@@ -114,11 +114,19 @@ imply that every domain state permits the operation.
 | `405 Method Not Allowed` | The resource does not support the HTTP method |
 | `406 Not Acceptable` | No acceptable response representation is available |
 | `409 Conflict` | A module-owned business conflict prevents the operation |
+| `413 Content Too Large` | The request content exceeds the endpoint's documented byte limit |
 | `415 Unsupported Media Type` | The request representation is unsupported |
 | `500 Internal Server Error` | An unexpected server failure occurred |
 
 An endpoint must not return `200 OK` with an error object. Errors use the appropriate non-success
 status and the ProblemDetail contract.
+
+An enumeration-resistant operation may intentionally return an empty `202 Accepted` without a
+`Location` header, monitor resource, or response representation when an accepted ADR and the owning
+endpoint specification require the caller not to distinguish existence, state, persistence, or
+delivery outcomes. FH-011 registration and verification-email resend use this exception under ADR
+0011. The exception does not make an actual error eligible for an undocumented empty success or
+error response.
 
 ## Media types and JSON
 
@@ -131,8 +139,9 @@ status and the ProblemDetail contract.
 - Nullability and omission behavior are documented for every optional public field.
 - Internal entity fields, audit implementation details, and bidirectional persistence graphs are
   not serialized automatically.
-- Unknown request fields follow the configured platform policy consistently; endpoints must not
-  silently implement different policies.
+- Unknown fields in public JSON request objects are rejected globally and use the safe
+  `MALFORMED_REQUEST` ProblemDetail contract. Endpoints must not accept unknown fields or install a
+  private deserialization policy that differs from this platform rule.
 
 ## Identifiers and stable values
 

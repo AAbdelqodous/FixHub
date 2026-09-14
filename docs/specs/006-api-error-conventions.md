@@ -68,6 +68,11 @@ The current implementation does not yet provide:
 - Empty successful commands use `204 No Content` when no response representation is required.
 - Creation commands use `201 Created` and provide a `Location` header when a stable resource URI is
   available.
+- Unknown fields in public JSON request objects are rejected globally as `MALFORMED_REQUEST`; an
+  endpoint must not install a private deserialization policy.
+- An accepted enumeration-resistant endpoint contract may use an empty `202 Accepted` without a
+  monitor, `Location`, or response representation. The owning ADR and endpoint specification must
+  define that exception; it does not permit undocumented empty error responses.
 
 ### Identifiers, dates, and money
 
@@ -150,12 +155,17 @@ The common catalogue initially covers:
 | `ENDPOINT_NOT_FOUND` | 404 | No API resource or route matches the request |
 | `METHOD_NOT_ALLOWED` | 405 | The HTTP method is not supported for the resource |
 | `NOT_ACCEPTABLE` | 406 | No acceptable response representation is available |
+| `REQUEST_TOO_LARGE` | 413 | The request body exceeds the endpoint's documented byte limit |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | The request media type is unsupported |
 | `INTERNAL_ERROR` | 500 | An unexpected server failure occurred |
 
 Authentication and access-denied rendering are implemented with Spring Security in its owning
 task because those failures may occur before MVC controller advice. FH-006 reserves their stable
 codes and documents the required contract.
+
+The authoritative error catalogue also records module-owned codes when a module publishes a public
+API. FH-011's Identity codes remain Identity-owned and use the shared ProblemDetail renderer; FH-006
+does not move them into `CommonErrorCode`.
 
 ## ProblemDetail contract
 

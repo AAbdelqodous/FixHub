@@ -3,6 +3,31 @@
 - Status: Accepted
 - Date: 2026-09-13
 
+## Amendment — 2026-09-14
+
+### Terminal verification-token retention execution
+
+The policy retention period for a terminal email-verification-token row remains exactly seven days;
+it is not operationally configurable, and changing it requires an accepted ADR amendment. A row
+becomes deletion-eligible when `terminalized_at + seven days <= cleanup transaction timestamp`.
+
+Physical deletion is scheduled work and cannot be guaranteed at the precise clock instant of
+eligibility. Under healthy application and database operation, eligible rows must be physically
+deleted within one hour after becoming eligible. Cleanup runs at least hourly, uses a consistent
+database transaction timestamp for eligibility decisions, and deletes eligible rows in bounded
+database batches repeatedly until no eligible rows remain. Batch size controls transaction size only:
+it must not limit an execution to one batch or allow eligible backlog to remain silently.
+
+Eligible backlog older than one hour produces an operational warning or alert. Eligible backlog older
+than 24 hours is a critical retention incident requiring operator investigation and remediation.
+Application or database unavailability may cause an operational SLO violation, but does not change
+or extend the seven-day policy. No implementation may describe possible cleanup delay as “eight-day
+retention,” indefinite retention, or configurable retention.
+
+This amendment supersedes only earlier wording that could be interpreted as requiring physical
+deletion at the exact seven-day clock instant. It clarifies operational execution of the existing
+decision and does not alter any other ADR-0011 decision.
+
 ## Context
 
 FH-010 introduced the closed Identity module's Account and PASSWORD Credential persistence model.
