@@ -331,8 +331,10 @@ Documentation alignment status:
 - FH-006 was aligned with ADR 0008 on 2026-09-14.
 - The legacy mapping was aligned with ADR 0008 on 2026-09-14.
 - The ERD was aligned with ADR 0008 on 2026-09-14.
-- The proposed `docs/specs/011-registration-and-email-verification.md` remains pending and must be
-  reconciled with this five-language platform policy before approval.
+- `docs/specs/011-registration-and-email-verification.md` completed localization reconciliation with
+  this five-language platform policy and was approved for implementation on 2026-09-14. No
+  ADR-0008/FH-011 localization reconciliation remains pending; FH-011 governs its required
+  implementation and launch evidence. No other ADR-0008 decision changes.
 
 ## Context
 
