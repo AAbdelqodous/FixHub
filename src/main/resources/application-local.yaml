@@ -31,3 +31,16 @@ application:
   admin:
     email: ${FIXHUB_ADMIN_EMAIL:admin@fixhub.com}
     password: ${FIXHUB_ADMIN_PASSWORD:changeme-local-only}
+
+fixhub:
+  identity:
+    password:
+      argon2:
+        salt-bytes: 16
+        hash-bytes: 32
+        parallelism: 1
+        memory-kib: 19456
+        iterations: 2
+        admission:
+          max-concurrency: 1
+          retry-after-seconds: 1
