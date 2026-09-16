@@ -44,3 +44,11 @@ fixhub:
         admission:
           max-concurrency: 1
           retry-after-seconds: 1
+      blocklist:
+        artifact-location: ${FIXHUB_BLOCKLIST_ARTIFACT_LOCATION}
+        manifest-location: ${FIXHUB_BLOCKLIST_MANIFEST_LOCATION}
+        source-sha256: ${FIXHUB_BLOCKLIST_SOURCE_SHA256}
+        artifact-sha256: ${FIXHUB_BLOCKLIST_ARTIFACT_SHA256}
+        expected-hibp-entry-count: 100000
+        expected-final-entry-count: ${FIXHUB_BLOCKLIST_EXPECTED_FINAL_ENTRY_COUNT}
+        version: ${FIXHUB_BLOCKLIST_VERSION}

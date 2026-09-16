@@ -1,0 +1,2 @@
+org.springframework.context.ApplicationContextInitializer=\
+com.fixhub.platform.identity.internal.password.SyntheticProductionBlocklistInitializer

@@ -1,0 +1,15 @@
+manifest-format-version=1
+version=test-synthetic-1
+source-url=https://example.invalid/hibp-synthetic.txt
+retrieval-date=2026-01-01
+source-sha256=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+transformation-procedure=fh011-top-100000-hibp-sha1-v1
+artifact-format=uppercase-sha1-lf-v1
+generator-version=test-synthetic-generator-1
+ranking=count-descending-hash-ascending
+artifact-sha256=1AA26D0926F96FCFEEB0221C7A58C73FB10ED3D6C7C193A2EAA39989E0431418
+hibp-entry-count=3
+supplemental-entry-count=3
+duplicate-removal-count=3
+final-entry-count=3
+license-review=reviewed

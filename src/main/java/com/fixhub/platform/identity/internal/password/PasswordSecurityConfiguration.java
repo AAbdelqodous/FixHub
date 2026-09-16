@@ -21,6 +21,11 @@ class PasswordSecurityConfiguration {
                 new Argon2AdmissionControl(properties.argon2().admission().maxConcurrency()));
     }
 
+    @Bean
+    PasswordBlocklist passwordBlocklist(IdentityPasswordProperties properties) {
+        return PasswordBlocklistLoader.load(properties.blocklist());
+    }
+
     static PasswordEncoder createPasswordEncoder(IdentityPasswordProperties properties) {
         IdentityPasswordProperties.Argon2 argon2 = properties.argon2();
         PasswordEncoder argon2id =

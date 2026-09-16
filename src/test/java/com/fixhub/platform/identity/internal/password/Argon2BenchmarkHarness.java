@@ -188,7 +188,15 @@ final class Argon2BenchmarkHarness {
                         1,
                         19_456,
                         2,
-                        new IdentityPasswordProperties.Admission(concurrency, 1)));
+                        new IdentityPasswordProperties.Admission(concurrency, 1)),
+                new IdentityPasswordProperties.Blocklist(
+                        "classpath:/blocklist/synthetic-blocklist.txt",
+                        "classpath:/blocklist/synthetic-blocklist.manifest",
+                        "A".repeat(64),
+                        "1AA26D0926F96FCFEEB0221C7A58C73FB10ED3D6C7C193A2EAA39989E0431418",
+                        100_000,
+                        3,
+                        "test-synthetic-1"));
     }
 
     private static String syntheticPassword(int operation) {

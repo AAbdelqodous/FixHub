@@ -38,6 +38,25 @@ class IdentityPasswordPropertiesTest {
     }
 
     @Test
+    void rejectsEveryMissingBlocklistProperty() {
+        String[] blocklistProperties =
+                new String[] {
+                    "fixhub.identity.password.blocklist.artifact-location",
+                    "fixhub.identity.password.blocklist.manifest-location",
+                    "fixhub.identity.password.blocklist.source-sha256",
+                    "fixhub.identity.password.blocklist.artifact-sha256",
+                    "fixhub.identity.password.blocklist.expected-hibp-entry-count",
+                    "fixhub.identity.password.blocklist.expected-final-entry-count",
+                    "fixhub.identity.password.blocklist.version"
+                };
+        for (String property : blocklistProperties) {
+            contextRunner
+                    .withPropertyValues(withoutProperty(property))
+                    .run(context -> assertThat(context).hasFailed());
+        }
+    }
+
+    @Test
     void acceptsValuesAboveEverySecurityBaseline() {
         contextRunner
                 .withPropertyValues(properties(20, 48, 2, 20_000, 3, 2, 3_600))
@@ -69,6 +88,13 @@ class IdentityPasswordPropertiesTest {
         assertRejected("fixhub.identity.password.argon2.admission.max-concurrency=-1");
         assertRejected("fixhub.identity.password.argon2.admission.retry-after-seconds=0");
         assertRejected("fixhub.identity.password.argon2.admission.retry-after-seconds=3601");
+        assertRejected("fixhub.identity.password.blocklist.source-sha256=" + "A".repeat(63));
+        assertRejected("fixhub.identity.password.blocklist.artifact-sha256=" + "G".repeat(64));
+        assertRejected("fixhub.identity.password.blocklist.expected-hibp-entry-count=99999");
+        assertRejected("fixhub.identity.password.blocklist.expected-hibp-entry-count=100001");
+        assertRejected("fixhub.identity.password.blocklist.expected-final-entry-count=0");
+        assertRejected("fixhub.identity.password.blocklist.version=");
+        assertRejected("fixhub.identity.password.blocklist.version=not valid");
     }
 
     private void assertRejected(String invalidProperty) {
@@ -90,6 +116,12 @@ class IdentityPasswordPropertiesTest {
         throw new IllegalArgumentException("Unknown test property");
     }
 
+    private static String[] withoutProperty(String propertyName) {
+        return java.util.Arrays.stream(validProperties())
+                .filter(property -> !property.startsWith(propertyName + "="))
+                .toArray(String[]::new);
+    }
+
     private static String[] validProperties() {
         return properties(16, 32, 1, 19_456, 2, 1, 1);
     }
@@ -102,14 +134,28 @@ class IdentityPasswordPropertiesTest {
             int iterations,
             int maximumConcurrency,
             int retryAfterSeconds) {
-        return new String[] {
-            "fixhub.identity.password.argon2.salt-bytes=" + saltBytes,
-            "fixhub.identity.password.argon2.hash-bytes=" + hashBytes,
-            "fixhub.identity.password.argon2.parallelism=" + parallelism,
-            "fixhub.identity.password.argon2.memory-kib=" + memoryKib,
-            "fixhub.identity.password.argon2.iterations=" + iterations,
-            "fixhub.identity.password.argon2.admission.max-concurrency=" + maximumConcurrency,
-            "fixhub.identity.password.argon2.admission.retry-after-seconds=" + retryAfterSeconds
-        };
+        String[] argon2Properties =
+                new String[] {
+                    "fixhub.identity.password.argon2.salt-bytes=" + saltBytes,
+                    "fixhub.identity.password.argon2.hash-bytes=" + hashBytes,
+                    "fixhub.identity.password.argon2.parallelism=" + parallelism,
+                    "fixhub.identity.password.argon2.memory-kib=" + memoryKib,
+                    "fixhub.identity.password.argon2.iterations=" + iterations,
+                    "fixhub.identity.password.argon2.admission.max-concurrency="
+                            + maximumConcurrency,
+                    "fixhub.identity.password.argon2.admission.retry-after-seconds="
+                            + retryAfterSeconds,
+                };
+        String[] fixtureProperties = SyntheticProductionBlocklistFixture.propertyValues();
+        String[] properties =
+                java.util.Arrays.copyOf(
+                        argon2Properties, argon2Properties.length + fixtureProperties.length);
+        System.arraycopy(
+                fixtureProperties,
+                0,
+                properties,
+                argon2Properties.length,
+                fixtureProperties.length);
+        return properties;
     }
 }
