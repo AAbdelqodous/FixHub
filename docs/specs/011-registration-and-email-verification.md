@@ -389,6 +389,18 @@ The construction contract is deterministic:
    UTF-8 with LF (`0x0A`) line endings and one final LF. Counts, plaintext values, comments, blank
    lines, a BOM, and CRLF line endings are prohibited in the runtime artifact.
 
+The selected HIBP entry count is fixed at exactly 100,000. The final artifact entry count is the
+selected HIBP count plus the net approved supplemental entries after duplicate removal and is
+therefore constrained to the inclusive range 100,000..200,000. Configuration cannot reduce the
+minimum or increase the maximum. Each record contributes exactly 40 uppercase hexadecimal digest
+characters plus one LF byte, so the maximum artifact size is exactly 8,200,000 bytes. Increasing
+the maximum requires an approved FH-011 specification change together with security and capacity
+review.
+
+Implementation clarification (2026-09-16; status Approved): synthetic unit-parser fixtures may use
+smaller counts only through a non-runtime-reachable test seam. Spring context tests must exercise
+the real production policy with a dynamically generated 100,000-entry artifact.
+
 For a registration candidate, the lookup key is exactly:
 
 ```text
@@ -1128,7 +1140,7 @@ property appears nowhere else in the configuration inventory.
 | `fixhub.identity.password.blocklist.source-sha256` | hexadecimal / SHA-256 | Yes | no default | 64 hexadecimal characters | Matches manifest | No | Identity; security approval |
 | `fixhub.identity.password.blocklist.artifact-sha256` | hexadecimal / SHA-256 | Yes | no default | 64 hexadecimal characters | Matches artifact/manifest | No | Identity; security approval |
 | `fixhub.identity.password.blocklist.expected-hibp-entry-count` | integer / entries | Yes | `100000` | Exactly `100000` | Equal to constant/manifest | No | Identity; no operational change |
-| `fixhub.identity.password.blocklist.expected-final-entry-count` | integer / entries | Yes | no default | Positive manifest count | Equals artifact/manifest | No | Identity; security approval |
+| `fixhub.identity.password.blocklist.expected-final-entry-count` | integer / entries | Yes | no default | `100000..200000` inclusive | Equals artifact/manifest | No | Identity; security/capacity approval for maximum change |
 | `fixhub.identity.password.blocklist.version` | immutable string | Yes | no default | Dated release/transformation version | Matches manifest | No | Identity; security approval |
 | `fixhub.identity.verification-token.lifetime` | duration | Yes | `PT24H` | Exactly `PT24H` | Equal to `PT24H` | No | Identity; ADR/specification amendment required |
 | `fixhub.identity.verification-token.cleanup.batch-size` | integer / rows | Yes | `500` | `100..10000` | In range; execution repeats batches until exhaustion | No | Identity; capacity approval for change |
