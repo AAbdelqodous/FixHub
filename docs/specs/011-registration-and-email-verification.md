@@ -458,10 +458,18 @@ A token is valid for 24 hours. At most one open verification token exists per Ac
 has null `terminalReason` and `terminalAt`; its current usability additionally requires
 `expiresAt` to be later than the authoritative injected-clock instant and its Account to be eligible.
 Terminal records have an exact seven-day policy retention period: they become deletion-eligible at
-`terminalized_at + seven days` and scheduled cleanup physically deletes them within the ADR-0011
+`terminal_at + seven days` and scheduled cleanup physically deletes them within the ADR-0011
 one-hour healthy-operation SLO. Cleanup delay is operational execution tolerance, never an
-extension or configuration of the seven-day retention policy. For this lifecycle, `terminalized_at`
-is the persisted `terminal_at` effective terminal instant.
+extension or configuration of the seven-day retention policy. For this lifecycle, `terminal_at` is
+the persisted effective terminal instant.
+
+Implementation clarification (2026-09-16; status Approved): `terminal_at` is the canonical persisted
+PostgreSQL column and `terminalAt` is its Java/JPA field. Earlier prose references to
+`terminalized_at` were aliases for that same persisted timestamp; they do not describe or authorize
+a second database column. The effective terminal time is written when a token enters `CONSUMED`,
+`SUPERSEDED`, `EXPIRED`, or `INVALIDATED`. The seven-day retention policy, cleanup scheduling,
+one-hour healthy-operation SLO, and 24-hour incident threshold remain unchanged, and no token
+lifecycle behavior changes.
 
 Allowed terminal reasons are:
 
