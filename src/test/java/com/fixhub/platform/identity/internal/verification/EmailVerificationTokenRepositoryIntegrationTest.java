@@ -49,12 +49,12 @@ class EmailVerificationTokenRepositoryIntegrationTest {
     @Autowired private javax.sql.DataSource dataSource;
 
     @Test
-    void flywayAppliesV1ThroughV4InOrderAndHibernateValidates() {
+    void flywayAppliesV1ThroughV5InOrderAndHibernateValidates() {
         assertThat(
                         jdbcTemplate.queryForList(
                                 "SELECT version FROM flyway_schema_history ORDER BY installed_rank",
                                 String.class))
-                .containsExactly("1", "2", "3", "4");
+                .containsExactly("1", "2", "3", "4", "5");
     }
 
     @Test
