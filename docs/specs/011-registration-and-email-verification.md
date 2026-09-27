@@ -883,14 +883,42 @@ UTF-8("FH011-RATE-V1")
 || uint32be(identifier-byte-length) || canonical-identifier-bytes
 ```
 
-A normalized FH-010 ASCII email uses its UTF-8 bytes. A network origin uses one address-family byte
-followed by the canonical 4-byte IPv4 or 16-byte IPv6 network representation; an IPv4-mapped IPv6
-address is reduced to IPv4. Hostnames, ports, zone identifiers, and non-canonical textual address
-forms never enter the HMAC. The global bucket uses the fixed canonical `FH011_GLOBAL` identifier
-bytes and no request-derived value. Policy and dimension domain separation prevents cross-policy
-digest linkage. The database never stores a raw email, normalized email, IP address, proxy chain, or
-reversible limiting identifier. The HMAC key is never stored in source control, database rows, logs,
-metrics, traces, exceptions, or public configuration output.
+A normalized FH-010 ASCII email uses its UTF-8 bytes. A network origin uses the exact canonical
+binary representation specified below. Hostnames, ports, zone identifiers, and non-canonical
+textual address forms never enter the HMAC. The global bucket uses the fixed canonical
+`FH011_GLOBAL` identifier bytes and no request-derived value. Policy and dimension domain separation
+prevents cross-policy digest linkage. The database never stores a raw email, normalized email, IP
+address, proxy chain, or reversible limiting identifier. The HMAC key is never stored in source
+control, database rows, logs, metrics, traces, exceptions, or public configuration output.
+
+#### Approved canonical-origin family-marker clarification — 2026-09-27
+
+The complete canonical origin identifier is exactly one of:
+
+| Address family | Binary representation | Total length |
+| --- | --- | ---: |
+| IPv4 | one byte `0x04` followed by exactly four IPv4 address octets in network order | 5 bytes |
+| IPv6 | one byte `0x06` followed by exactly sixteen IPv6 address octets in network order | 17 bytes |
+
+An IPv4-mapped IPv6 address is converted to canonical IPv4 before HMAC derivation and uses
+`0x04 || four mapped IPv4 octets`, never `0x06 || sixteen IPv4-mapped IPv6 octets`. The family
+markers are unsigned binary octet values, not text characters `"4"` or `"6"`; Java's signed-byte
+representation does not change their values, and `0x04` and `0x06` fit identically in signed Java
+bytes. Address octets remain in network byte order.
+
+The HMAC origin boundary rejects a missing marker, an empty address, any marker other than `0x04`
+or `0x06`, `0x04` with any address length other than four bytes, `0x06` with any address length
+other than sixteen bytes, and an IPv4-mapped IPv6 address encoded under `0x06`. Textual addresses
+and any extra prefix, suffix, port, zone text, header text, or metadata are not valid canonical
+input. The HMAC component validates this binary shape; it does not parse textual IP addresses,
+read request or forwarding headers, resolve proxy trust, perform DNS, choose the client address, or
+convert arbitrary network input. The future trusted ingress resolver supplies the exact five-byte
+or seventeen-byte value before calling the HMAC component.
+
+These fixed, non-configurable marker bytes are part of the canonical identifier inside the `ORIGIN`
+HMAC frame. Changing either marker changes affected protected digests and durable bucket identities.
+Any change requires an approved specification, security, compatibility, and migration decision;
+existing buckets must not silently be reset by a marker change.
 
 ### Network-origin resolution
 
@@ -1054,11 +1082,12 @@ the exact approved `RateLimitPolicy` value; dimension separation never replaces 
 
 The email identifier is the UTF-8 byte representation of an already FH-010-normalized ASCII email.
 The HMAC component neither trims nor lowercases nor otherwise normalizes it. The origin identifier
-is the exact canonical address-family and address-byte representation defined above, supplied by the
-future trusted ingress resolver. The HMAC component does not parse request or forwarding headers,
-textual IP addresses, or proxy data. The global identifier is the fixed ASCII `FH011_GLOBAL` byte
-sequence and contains no request-derived value. Raw identifiers exist transiently for derivation
-only; they are never stored, logged, rendered, returned, or included in exceptions.
+is the exact five-byte `0x04` IPv4 or seventeen-byte `0x06` IPv6 canonical representation defined
+above, supplied by the future trusted ingress resolver. Slice 5B validates and consumes those
+bytes but does not implement ingress resolution or parse request or forwarding headers, textual IP
+addresses, or proxy data. The global identifier is the fixed ASCII `FH011_GLOBAL` byte sequence and
+contains no request-derived value. Raw identifiers exist transiently for derivation only; they are
+never stored, logged, rendered, returned, or included in exceptions.
 
 #### Secret references, key ownership, and validation
 
