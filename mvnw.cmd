@@ -89,10 +89,13 @@ if (-not (Test-Path -Path $MAVEN_M2_PATH)) {
 }
 
 $MAVEN_WRAPPER_DISTS = $null
-if ((Get-Item $MAVEN_M2_PATH).Target[0] -eq $null) {
+# Apache Maven Wrapper issue #395: Target can be null for a normal directory.
+$m2Item = Get-Item -Force -Path $MAVEN_M2_PATH
+$m2Targets = @($m2Item.Target)
+if ($m2Targets.Count -eq 0 -or $null -eq $m2Targets[0]) {
   $MAVEN_WRAPPER_DISTS = "$MAVEN_M2_PATH/wrapper/dists"
 } else {
-  $MAVEN_WRAPPER_DISTS = (Get-Item $MAVEN_M2_PATH).Target[0] + "/wrapper/dists"
+  $MAVEN_WRAPPER_DISTS = $m2Targets[0] + "/wrapper/dists"
 }
 
 $MAVEN_HOME_PARENT = "$MAVEN_WRAPPER_DISTS/$distributionUrlNameMain"

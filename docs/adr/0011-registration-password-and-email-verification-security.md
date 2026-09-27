@@ -9,7 +9,16 @@
 
 The policy retention period for a terminal email-verification-token row remains exactly seven days;
 it is not operationally configurable, and changing it requires an accepted ADR amendment. A row
-becomes deletion-eligible when `terminalized_at + seven days <= cleanup transaction timestamp`.
+becomes deletion-eligible when `terminal_at + seven days <= cleanup transaction timestamp`.
+
+### Clarification — 2026-09-16
+
+The canonical persisted PostgreSQL column is `terminal_at`, corresponding to the Java/JPA field
+`terminalAt`. Earlier prose references to `terminalized_at` were aliases for that same persisted
+timestamp and do not describe or authorize a second column. The effective terminal time is written
+when a token enters `CONSUMED`, `SUPERSEDED`, `EXPIRED`, or `INVALIDATED`. The seven-day retention
+policy, cleanup scheduling, one-hour healthy-operation SLO, and 24-hour incident threshold remain
+unchanged; this clarification changes no token lifecycle behavior.
 
 Physical deletion is scheduled work and cannot be guaranteed at the precise clock instant of
 eligibility. Under healthy application and database operation, eligible rows must be physically

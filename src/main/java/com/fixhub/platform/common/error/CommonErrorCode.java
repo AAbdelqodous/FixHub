@@ -19,6 +19,10 @@ public enum CommonErrorCode implements ErrorCode {
             "NOT_ACCEPTABLE",
             "Requested response representation is not available",
             HttpStatus.NOT_ACCEPTABLE),
+    REQUEST_TOO_LARGE(
+            "REQUEST_TOO_LARGE",
+            "Request body exceeds the allowed size",
+            HttpStatus.CONTENT_TOO_LARGE),
     UNSUPPORTED_MEDIA_TYPE(
             "UNSUPPORTED_MEDIA_TYPE",
             "Request media type is not supported",

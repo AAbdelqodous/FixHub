@@ -1,3 +1,10 @@
 spring:
   application:
     name: fixhub-core
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+  datasource:
+    hikari:
+      data-source-properties:
+        logServerErrorDetail: false
