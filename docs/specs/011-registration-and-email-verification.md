@@ -1032,6 +1032,131 @@ recording a secret; rotation evidence confirms previous-key availability through
 unmistakably synthetic keys and verify length, separation, lifecycle, and behavior only—not
 statistical randomness.
 
+### Approved Slice 5B HMAC and rotation implementation clarification — 2026-09-27
+
+This Approved clarification fixes the byte-level and lifecycle contract for an isolated HMAC
+foundation. It does not authorize a production secret provider, production rate-limit admission, or
+registration exposure.
+
+#### Exact dimensions and canonical identifiers
+
+The `dimension` field in the HMAC frame above uses exactly these case-sensitive ASCII/UTF-8 labels:
+
+| Dimension | Label | Exact bytes (hexadecimal) |
+| --- | --- | --- |
+| Email | `EMAIL` | `45 4D 41 49 4C` |
+| Origin | `ORIGIN` | `4F 52 49 47 49 4E` |
+| Global | `GLOBAL` | `47 4C 4F 42 41 4C` |
+
+These labels are not configurable. Changing one changes durable bucket identities and requires an
+approved specification and security compatibility decision. The separate `policy` frame field uses
+the exact approved `RateLimitPolicy` value; dimension separation never replaces policy separation.
+
+The email identifier is the UTF-8 byte representation of an already FH-010-normalized ASCII email.
+The HMAC component neither trims nor lowercases nor otherwise normalizes it. The origin identifier
+is the exact canonical address-family and address-byte representation defined above, supplied by the
+future trusted ingress resolver. The HMAC component does not parse request or forwarding headers,
+textual IP addresses, or proxy data. The global identifier is the fixed ASCII `FH011_GLOBAL` byte
+sequence and contains no request-derived value. Raw identifiers exist transiently for derivation
+only; they are never stored, logged, rendered, returned, or included in exceptions.
+
+#### Secret references, key ownership, and validation
+
+The isolated Slice 5B foundation may define a narrow internal secret-reference resolver interface.
+It accepts an opaque nonblank reference. Every successful resolution returns a newly allocated
+decoded-key byte array whose exclusive ownership transfers completely to the caller. The resolver
+never returns an internal, shared, directly cached, or previously returned mutable array, and never
+mutates or clears an array after transferring it. An internal secret cache must supply a fresh
+defensive copy for each successful call. Failed resolution returns no partial key material. The
+caller validates its exclusively owned result, makes a separate defensive copy before retaining the
+key in another representation, and then clears the resolver result. Each component clears only
+arrays it owns; it never clears another component's array. This contract applies to later production
+resolvers and test-only deterministic resolvers using unmistakably synthetic material. Slice 5B has
+no production resolver implementation and does not bind the documented HMAC properties into a
+production-ready Spring bean. This clarification selects no environment-variable syntax, file URI,
+vault product, cloud provider, Kubernetes secret, encoding, or deployment mechanism. Production
+provider selection requires a later approved deployment-integration decision. No production secret
+or deterministic production key may be committed, and the isolated core remains unwired so it cannot
+make registration reachable.
+
+The algorithm is exactly `HmacSHA256`. Every decoded key contains at least 32 bytes. Validation can
+prove length and configuration consistency but cannot prove randomness. Current and previous key
+versions are positive and distinct; their active key bytes must also differ. Identical material under
+different versions fails closed. Any key comparison must not disclose either key. Key holders own
+defensive copies; each holder clears only its own temporary arrays when their ownership ends. No
+holder clears an array still owned by another component. Deterministic erasure of Java `String`
+values or JCA-provider internals is not claimed.
+
+#### Configuration modes and decision instant
+
+Exactly two structural configuration modes are valid:
+
+1. **Steady:** `current-version` and `current-secret-ref` are present; `previous-version`,
+   `previous-secret-ref`, `rotation-started-at`, and `overlap` are all absent. Only the current
+   version is active.
+2. **Rotation:** `current-version`, `current-secret-ref`, `previous-version`,
+   `previous-secret-ref`, `rotation-started-at`, and `overlap` are all present. The overlap is at
+   least `PT25H`.
+
+Partial rotation configuration fails closed. When rate-limit policy configuration is implemented,
+startup validation must additionally prove that overlap covers the longest possible old-key
+enforcement effect required above. Slice 5B does not invent policy values or claim that
+cross-configuration proof.
+
+For each active-version decision, the pure core receives one explicit non-null UTC `Instant`. It
+does not read the JVM wall clock, query PostgreSQL, or create or select a `Clock` bean. Future
+admission integration must capture one approved decision instant and reuse it for every HMAC-version
+decision for that operation. Selection of its production time source belongs to that later
+integration contract. Slice 5B tests may supply fixed instants.
+
+For a complete rotation configuration, let `S = rotation-started-at`, `E = S + overlap`, and `T`
+be the explicit decision instant. Rotation snapshot construction and startup validation compute
+`E` once with overflow-detecting `Instant`/`Duration` arithmetic and retain that representable,
+immutable end instant. If `S + overlap` cannot be represented as a Java `Instant`, the configuration
+is invalid and fails closed before any derivation or active-version decision. It never wraps,
+saturates, clamps to `Instant.MAX`, silently shortens overlap, silently selects one key, or defers
+failure until an identifier is processed. Other invalid date/time arithmetic also fails closed as
+malformed or inconsistent rotation configuration. The failure has a fixed sanitized internal message
+without secret references, key material, identifier data, framed bytes, digests, or provider
+diagnostics. Later derivation compares `T` with the validated `E`; it never recomputes an unchecked
+end for each identifier. Active versions are exactly:
+
+| Decision instant | Active version order |
+| --- | --- |
+| `T < S` | Previous only |
+| `S <= T < E` | Current, then previous |
+| `T >= E` | Current only |
+
+Equality at `S` belongs to overlap; equality at `E` excludes the previous version. Complete
+previous-key fields may temporarily remain after `E`, but the previous key produces no digest at
+or after `E`. Current and previous digests remain independent and are never combined. A later
+admission stage evaluates both active version buckets independently and atomically; exhaustion of
+either rejects the operation. Partial, malformed, short-key, duplicate-version, or identical-key
+configuration always fails closed.
+
+#### Derivation output and isolated implementation scope
+
+Each output contains only a positive key version and exactly 32 defensively owned digest bytes.
+During overlap outputs are ordered current then previous. Outputs and their rendering contain no
+secret reference or bytes, raw identifier, framed input, dimension or policy input, or provider
+diagnostic detail. A caller converting outputs to Slice 5A inputs clears only its own temporary
+digest copies after ownership transfer.
+
+Slice 5B may implement pure HMAC framing and derivation; typed email, canonical-origin, and global
+derivation boundaries; immutable validated key and rotation snapshots; explicit-instant
+active-version selection; the narrow unresolved resolver interface; test-only synthetic resolver
+support; and focused unit or non-production wiring tests. It does not implement production secret
+resolution, production property binding or startup readiness, Slice 5A integration,
+`RegistrationEmailAdmission`, Slice 4D wiring, ingress/header/proxy resolution, HTTP behavior,
+cleanup, delivery, resend or verification lifecycle, or production key-generation or rotation
+evidence.
+
+No production secret value appears in source control, configuration, logs, metrics, traces,
+exceptions, reports, or test names. Raw email or origin identifiers and derived digests never
+appear in diagnostics. Synthetic tests establish no production entropy, custody, activation, or
+rotation evidence. Production provider selection, generation and custody records, deployment
+binding, and rotation records remain launch prerequisites.
+
 ### Rate-limit responses and cleanup
 
 - A rejected registration returns `429 IDENTITY_REGISTRATION_RATE_LIMITED`.
