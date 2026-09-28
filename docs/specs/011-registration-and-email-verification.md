@@ -936,8 +936,9 @@ header family emitted by its ingress; FH-011 does not hard-code either RFC `Forw
 - For a trusted ingress, exactly the selected header family must be present and unambiguous. A
   missing, malformed, duplicate, conflicting, or otherwise ambiguous required representation fails
   closed before identity-lifecycle mutation.
-- The application walks a valid trusted chain from the application outward and selects the last
-  untrusted hop as the client origin.
+- The application walks a valid trusted chain from the application outward and selects the first
+  untrusted hop encountered from that side as the client origin. Farther-left values cannot override
+  that selection.
 - The selected address is converted to the documented canonical IPv4 or IPv6 representation before
   the HMAC operation.
 
@@ -949,6 +950,136 @@ diagnostic.
 
 This resolver remains scoped to the three FH-011 endpoints. It does not establish a reusable
 platform-wide proxy convention. A later cross-module convention requires its own reviewed ADR.
+
+#### Approved Slice 5C trusted-ingress and canonical-origin parsing clarification — 2026-09-28
+
+This Approved clarification defines an unwired, pure-Java trusted-origin core. Slice 5C may
+implement an immutable validated ingress policy, direct and proxied decisions, strict numeric peer
+and bounded forwarding-header parsing, canonical CIDR matching, trusted-hop traversal, canonical
+origin output, fixed sanitized internal failure categories, and pure unit tests. It does not add a
+servlet filter, MVC argument resolver, global request interception, Spring bean or property binding,
+YAML properties, Spring Security changes, HMAC or Slice 5A integration,
+`RegistrationEmailAdmission`, Slice 4D wiring, HTTP status or ProblemDetail mapping, rate-limit
+policy values, cleanup, delivery, resend or verification lifecycle, or production-deployment claims.
+A later narrow servlet adapter must establish genuine socket-peer provenance and enumerate physical
+header lines. Slice 5C receives those values but does not obtain them from a request itself.
+
+**Ingress modes.** `DIRECT` uses the socket peer as the authoritative origin. It ignores
+`Forwarded` and `X-Forwarded-For` inputs without parsing them. The forwarding-header family and
+trusted CIDRs must both be absent; either proxied-only field in `DIRECT` is invalid configuration.
+The documented development default remains `DIRECT`; no production default is introduced.
+`PROXIED` requires exactly one selected forwarding family, `FORWARDED` or `X_FORWARDED`, and a
+nonempty validated trusted-CIDR list. Its immediate socket peer is parsed and canonicalized first.
+If that peer is untrusted, both forwarding families are ignored without parsing and the canonical
+peer is returned. If that peer is trusted, exactly one physical line of the selected family is
+required. Zero selected lines fail as missing and more than one fails as duplicate or ambiguous.
+Any physical line of the non-selected family fails as a conflicting family; its value is neither
+parsed nor logged. Malformed, oversized, or ambiguous selected data fails closed. Other unrelated
+request headers are outside this decision.
+
+**Socket peer and address parsing.** The pure core accepts a non-null, nonblank, ASCII socket-peer
+text value of at most 64 characters, supplied by the future adapter. It must be only a numeric IPv4
+or IPv6 literal, with no leading, trailing, or internal whitespace; bracket, port, zone or scope
+identifier, prefix length, hostname, or control character. IPv4 has exactly four decimal octets
+separated by dots. Each octet is 0..255, with no sign, hexadecimal or octal form, or leading zero
+unless it is exactly `0`. IPv6 uses strict numeric grammar: case-insensitive hexadecimal,
+equivalent compressed or expanded forms, at most one `::`, no zone, bracket, or port. Embedded
+dotted-decimal IPv4 is accepted only if the final address is genuinely IPv4-mapped IPv6. Equivalent
+hexadecimal mapped forms are also recognized. A mapped IPv6 address becomes canonical IPv4 before
+CIDR matching and output; other IPv4-compatible but non-mapped IPv6 stays IPv6. Malformed or
+unavailable peer input fails with a sanitized internal category. Parsing never performs DNS or any
+network operation.
+
+Every peer and header address is strictly parsed numerically, converted to binary address octets,
+normalized from mapped IPv6 to IPv4 when applicable, compared with trusted CIDRs by family and
+prefix, and converted to the canonical output only after origin selection. Textual spelling never
+participates in trust matching. Reverse DNS, hostname comparison, locale transformation, and text
+prefix comparison are prohibited.
+
+**Trusted CIDRs.** `trusted-cidrs` has 1..64 entries. Each non-null, nonblank entry has at most 64
+ASCII characters and uses only numeric `address/prefix-length` syntax with no whitespace, hostname,
+port, bracket, zone, query, fragment, or metadata. IPv4 prefixes are 0..32; IPv6 prefixes are
+0..128. All host bits must already be zero. Equivalent valid IPv6 textual spellings may be
+normalized internally. The immutable policy stores canonical network bytes and prefix lengths.
+After canonicalization it rejects duplicate or overlapping networks, IPv4 or IPv6 catch-all `/0`,
+IPv4-mapped IPv6 CIDRs, unspecified networks, and multicast networks. Trusted IPv4 networks use
+IPv4 CIDRs. Private, loopback, link-local, documentation, and public unicast ranges are not rejected
+merely by category; approval of actual ingress networks remains deployment/security evidence.
+Matching is family-aware: IPv4 matches only IPv4 CIDRs, IPv6 matches only IPv6 CIDRs, and mapped
+IPv6 is converted to IPv4 before matching. No mutable lookup cache or database is needed.
+
+**General forwarding bounds.** For a trusted peer in `PROXIED`, the selected family has exactly
+one physical header line containing 1..2048 ASCII bytes. A parsed chain has at most 16 hops. Each
+raw hop or element has at most 128 ASCII bytes before surrounding optional whitespace (OWS) is
+removed. Only ASCII space and horizontal tab are permitted as OWS at separator boundaries. CR, LF,
+NUL, DEL, and all other control characters are rejected. Empty elements, including those from
+leading, trailing, or repeated commas, are rejected. Parsing stops and fails before creating an
+element beyond the hop limit; unbounded split operations or allocations based on attacker-controlled
+element counts are prohibited. The HTTP container retains its independent absolute request-header
+limit. In `DIRECT` or for an untrusted `PROXIED` peer, both forwarding families are ignored without
+parsing, regardless of their content.
+
+**`X-Forwarded-For` selected grammar.** The single physical line is a comma-separated list of
+1..16 numeric address elements ordered farthest to nearest. ASCII SP/HTAB may surround an element
+at comma boundaries; the element itself must otherwise meet the strict numeric peer grammar. It
+cannot be quoted or bracketed, contain a port, zone or prefix, or be `unknown`, obfuscated, a
+hostname, or empty. Mapped IPv6 is normalized before trust evaluation.
+
+**`Forwarded` selected grammar.** This is an intentionally strict operational subset, not a
+general permissive RFC parser. The single physical line is a comma-separated list of 1..16
+forwarded-elements ordered farthest to nearest. ASCII SP/HTAB may occur only around comma
+separators; each element contains exactly one parameter, `for=<node>`, with ASCII case-insensitive
+`for` and no whitespace around `=`. A `by`, `host`, `proto`, extension or second parameter,
+semicolon, duplicate `for`, escaped quoted-string content, `unknown`, obfuscated or empty node,
+port, zone identifier, or hostname is rejected. IPv4 is unquoted numeric form such as
+`for=192.0.2.10`; quoted IPv4 is rejected. IPv6 is exactly a quoted bracketed numeric literal such
+as `for="[2001:db8::1]"`, with no escape sequence or characters before or after the closing quote.
+Unquoted IPv6, unbracketed quoted IPv6, and a port after the bracket are rejected. Permitted mapped
+IPv6 is normalized to IPv4 before trust matching. A production deployment selecting `FORWARDED`
+must configure every trusted proxy to emit this strict subset.
+
+**Trusted-hop traversal.** Header hops are ordered farthest to nearest. Parse and canonicalize the
+immediate socket peer first. If untrusted, ignore both header families and select that peer. If
+trusted, enforce the selected/non-selected physical-line rules, then parse and canonicalize the
+selected chain. Traverse its hops from rightmost to leftmost, skipping each trusted hop. Select the
+first untrusted hop reached and ignore farther-left values as non-authoritative. If every supplied
+hop is trusted, fail closed: no untrusted client origin was established. Thus the selected client
+origin is never a trusted hop. For example, `[client]` through trusted proxy selects `client`;
+`[client, proxy1]` through trusted `proxy2` skips `proxy1`; `[spoof, client, proxy1]` through trusted
+`proxy2` selects `client` and ignores `spoof`. An untrusted socket peer with any headers remains the
+origin. Mixed IPv4/IPv6 hops use family-aware matching, and mapped IPv6 is normalized first.
+Deployment must separately prove that trusted proxies strip client-supplied forwarding headers
+before generating the approved chain; code alone cannot establish this.
+
+**Canonical result and diagnostics.** The selected origin is only `0x04` followed by four
+network-order IPv4 octets, or `0x06` followed by sixteen network-order IPv6 octets. Its type is
+package-private, final, non-record, defensively copies on construction and access, and has a fixed
+redacted `toString()`. It declares no identifier-bearing `equals()`, `hashCode()`, JavaBean getter,
+or serialization surface. It retains no text peer, header line, chain, CIDR, port, `Host`, or parser
+detail. Component-owned temporary byte arrays are cleared where ownership permits; Java `String`
+erasure is not claimed. The policy and CIDRs are immutable after construction; the resolver and
+parsers are stateless and safe for concurrent use without a mutable cache, transaction, database,
+network call, or DNS. Collection and byte-array inputs are defensively handled; concurrent
+resolutions share no mutable request state.
+
+Invalid configuration fails policy construction. Per-request failures use narrow internal
+categories, including `MALFORMED_PEER`, `MISSING_SELECTED_HEADER`,
+`DUPLICATE_SELECTED_HEADER`, `CONFLICTING_HEADER_FAMILY`, `OVERSIZED_HEADER`, `TOO_MANY_HOPS`,
+`MALFORMED_FORWARDING_CHAIN`, and `ALL_HOPS_TRUSTED`. Messages are fixed and sanitized: no raw IP,
+header, chain, CIDR, canonical bytes, `Host`, port, parser token, or underlying parser exception
+text appears. Aggregate metrics may use only mode and failure category, never a request-specific
+identifier. Slice 5C implements no HTTP status, ProblemDetail, or `Retry-After` mapping. Later
+endpoint integration applies the trusted-ingress failure mapping above where applicable.
+
+**Configuration and deployment boundary.** The property inventory remains
+`fixhub.identity.ingress.mode`, `fixhub.identity.ingress.forwarding-header-family`, and
+`fixhub.identity.ingress.trusted-cidrs`, with the semantic validation above. Slice 5C adds no
+production binding, application YAML, or Spring configuration bean. Production later explicitly
+selects its deployment profile; no production default is introduced. The later servlet adapter and
+startup binding require separate review. Reverse-proxy product and configuration, header
+strip/overwrite behavior, trusted production CIDRs, prevention of direct backend access,
+container/load-balancer peer provenance, Kubernetes/cloud forwarding behavior, shared-NAT evidence,
+monitoring and alerting, and penetration/security review remain production-launch prerequisites.
 
 ### V5 persistence and fixed-window model
 
@@ -1329,9 +1460,9 @@ property appears nowhere else in the configuration inventory.
 | `fixhub.identity.rate-limit.hmac.previous-secret-ref` | secret reference | Conditional | no default | Resolves to >=32 bytes during overlap | Required/resolvable during overlap | Yes | Identity; security approval for rotation |
 | `fixhub.identity.rate-limit.hmac.rotation-started-at` | UTC instant | Conditional | no default | Required only in overlap | Paired lifecycle fields | No | Identity; security approval for rotation |
 | `fixhub.identity.rate-limit.hmac.overlap` | duration | Conditional | no default | `>=PT25H` | Paired lifecycle fields | No | Identity; security approval; no early removal |
-| `fixhub.identity.ingress.mode` | enum | Yes | `DIRECT` | `DIRECT` or `PROXIED` | Proxied requires ingress fields | No | Identity; security/operations approval |
-| `fixhub.identity.ingress.forwarding-header-family` | enum | Conditional | no default | `FORWARDED` or `X_FORWARDED` | Required only proxied | No | Identity; security/operations approval |
-| `fixhub.identity.ingress.trusted-cidrs` | CIDR list | Conditional | no default | Non-empty canonical CIDRs | Required only proxied; no catch-all client ranges | No | Identity; security/operations approval |
+| `fixhub.identity.ingress.mode` | enum | Yes | `DIRECT` | `DIRECT` or `PROXIED` | `DIRECT` forbids both proxied-only fields; `PROXIED` requires both; no production default | No | Identity; security/operations approval |
+| `fixhub.identity.ingress.forwarding-header-family` | enum | Conditional | no default | `FORWARDED` or `X_FORWARDED` | Required only in `PROXIED`; absent in `DIRECT` | No | Identity; security/operations approval |
+| `fixhub.identity.ingress.trusted-cidrs` | CIDR list | Conditional | no default | 1..64 canonical, nonoverlapping CIDRs under the Slice 5C clarification | Required only in `PROXIED`; absent in `DIRECT`; no `/0` | No | Identity; security/operations approval |
 | `fixhub.identity.mail.smtp.host` | hostname | Yes | `localhost` | Approved provider host | Host syntax | No | Identity; provider/security approval |
 | `fixhub.identity.mail.smtp.port` | integer / port | Yes | `1025` | `1..65535` | In range | No | Identity; provider/security approval |
 | `fixhub.identity.mail.smtp.auth-enabled` | boolean | Yes | `false` | Provider requirement | Credential reference when true | No | Identity; provider/security approval |
