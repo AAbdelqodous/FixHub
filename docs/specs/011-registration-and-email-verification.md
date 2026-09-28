@@ -1141,8 +1141,9 @@ For each applicable logical bucket and every active HMAC key version, the limite
 PostgreSQL `INSERT ... ON CONFLICT ... DO UPDATE ... WHERE ... RETURNING` operation. First use inserts
 `request_count = 1`. The conflict update increments by exactly one only when the stored count is
 below the applicable threshold and, for `RESEND_EMAIL`, the transaction instant is not before
-`cooldown_until`. An admitted resend sets `cooldown_until` to the transaction instant plus five
-minutes. No returned row means that bucket is exhausted or cooling down.
+`cooldown_until`. An admitted resend sets `cooldown_until` to the transaction instant plus the
+configured `RESEND_EMAIL` cooldown (five minutes for the documented development default). No
+returned row means that bucket is exhausted or cooling down.
 
 All rows in one evaluation stage are processed in deterministic
 `(policy, key_version, key_digest, window_start)` order inside one database transaction. If any
@@ -1335,6 +1336,38 @@ Each retention expiry is at least 24 hours after the later of `window_end` and `
 cleanup cannot affect an active window, cooldown, or key-overlap decision. Cleanup never changes an
 Account, Credential, verification token, or public response.
 
+#### Approved Slice 5D retention-offset and duration-precision clarification — 2026-09-28
+
+This owner-approved clarification fixes the meaning of the configured bucket-retention duration.
+Let `B = max(window_end, cooldown_until)` and let `D` be the configured bucket-retention offset. When
+no cooldown applies, the effective cooldown boundary does not extend beyond `window_end`. The exact
+runtime formula is `retention_expires_at = B + D`. `D` is an offset **after** the later effective
+boundary, not a total lifetime measured from the limiter transaction timestamp.
+
+The fixed minimum offset is `D >= PT24H`: exactly `PT24H` is valid and a smaller duration is invalid.
+The Slice 5D policy-settings snapshot validates `D` directly against that fixed minimum. It does not
+add a policy window or resend cooldown to `D`, calculate a second minimum from those durations, or
+reject `PT24H`. In particular, `max(window, cooldown) + PT24H`, `window + PT24H`, and
+`cooldown + PT24H` are not configuration minima; each would count an effective boundary already
+included in `B` a second time. There is no calculated-minimum overflow case for Slice 5D because
+`PT24H` is fixed and representable. Slice 5A remains responsible for calculating `B + D` at runtime
+and fails closed if the resulting timestamp cannot be represented. Slice 5D does not independently
+prove runtime timestamp representability.
+
+Policy windows are mandatory positive durations with whole-second precision; fractional seconds are
+invalid. `RESEND_EMAIL` alone has a mandatory cooldown, from `Duration.ZERO` through its configured
+window inclusive. Zero, positive fractional-second durations, and exact equality with the window are
+valid; negative or greater-than-window durations are invalid. Every other policy has no cooldown,
+including no zero-valued cooldown field. The bucket-retention offset is mandatory and at least
+`PT24H`; fractional-second offsets are valid. Slice 5D preserves accepted cooldown and retention
+durations exactly, without rounding, truncation, or silent normalization. Existing Slice 5A
+runtime/database behavior remains authoritative for applying them.
+
+This clarification adds no duration maximum, HMAC rotation-overlap validation, startup binding,
+secret-provider behavior, admission or servlet wiring, production-code default, migration, or other
+runtime requirement. The later cross-configuration proof that HMAC rotation overlap covers the
+longest old-key enforcement effect remains deferred.
+
 ## Public endpoint security
 
 Unauthenticated access is permitted only to these exact routes and methods:
@@ -1443,7 +1476,7 @@ property appears nowhere else in the configuration inventory.
 | `fixhub.identity.rate-limit.registration-origin.window` | duration | Yes | `PT1H` | Positive whole seconds | Valid UTC window | No | Identity; tighten allowed, change needs security/capacity approval |
 | `fixhub.identity.rate-limit.resend-email.limit` | integer / requests | Yes | `5` | Positive launch default | Positive | No | Identity; tighten allowed, increase needs security/capacity approval |
 | `fixhub.identity.rate-limit.resend-email.window` | duration | Yes | `P1D` | Positive whole seconds | Valid UTC window | No | Identity; tighten allowed, change needs security/capacity approval |
-| `fixhub.identity.rate-limit.resend-email.cooldown` | duration | Yes | `PT5M` | `0..window` | Not greater than email window | No | Identity; tighten allowed, increase needs security/capacity approval |
+| `fixhub.identity.rate-limit.resend-email.cooldown` | duration | Yes | `PT5M` | `0..window`, inclusive; fractional seconds permitted | Not greater than email window; preserve exact duration | No | Identity; tighten allowed, increase needs security/capacity approval |
 | `fixhub.identity.rate-limit.resend-origin.limit` | integer / requests | Yes | `60` | Positive; shared-NAT evidence before enforcement | Positive | No | Identity; tighten allowed, increase needs security/capacity approval |
 | `fixhub.identity.rate-limit.resend-origin.window` | duration | Yes | `PT1H` | Positive whole seconds | Valid UTC window | No | Identity; tighten allowed, change needs security/capacity approval |
 | `fixhub.identity.rate-limit.verification-origin.limit` | integer / requests | Yes | `60` | Positive; shared-NAT evidence before enforcement | Positive | No | Identity; tighten allowed, increase needs security/capacity approval |
@@ -1453,7 +1486,7 @@ property appears nowhere else in the configuration inventory.
 | `fixhub.identity.rate-limit.infrastructure-retry-after-seconds` | integer / seconds | Yes | `60` | `1..3600` | In range | No | Identity; tightening allowed, increase needs security approval |
 | `fixhub.identity.rate-limit.cleanup.cron` | cron | Yes | `0 0 * * * *` | At least hourly | Valid schedule | No | Identity; capacity approval for change |
 | `fixhub.identity.rate-limit.cleanup.batch-size` | integer / rows | Yes | `500` | `1..10000` | In range | No | Identity; capacity approval for change |
-| `fixhub.identity.rate-limit.cleanup.retention` | duration | Yes | `P2D` | At least 24 hours after later window/cooldown | Meets configured effects | No | Identity; reduction needs security approval |
+| `fixhub.identity.rate-limit.cleanup.retention` | duration / offset after later boundary | Yes | `P2D` | `D >= PT24H`; fractional seconds permitted | Apply `retention_expires_at = B + D` as clarified above; preserve exact duration | No | Identity; reduction needs security approval |
 | `fixhub.identity.rate-limit.hmac.current-version` | integer | Yes | `1` | Positive | Valid positive format | No | Identity; security approval for rotation |
 | `fixhub.identity.rate-limit.hmac.previous-version` | integer | Conditional | no default | Positive, distinct current; required in overlap | Lifecycle consistency | No | Identity; security approval for rotation |
 | `fixhub.identity.rate-limit.hmac.current-secret-ref` | secret reference | Yes | no default | Resolves to >=32 bytes | Reference/decoded length | Yes | Identity; security approval for rotation |
