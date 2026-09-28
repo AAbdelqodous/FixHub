@@ -1167,20 +1167,25 @@ request. This preserves abuse accounting without consulting Account or token exi
 ### HMAC key rotation
 
 Limiter configuration identifies one current key and may identify one previous key during a
-rotation overlap. The previous key remains available for at least 25 hours after the current version
-changes, covering the longest approved window or cooldown with operational margin.
+rotation overlap. Its configured duration satisfies the fixed `PT25H` floor and the
+cross-configuration minimum specified in the approved PostgreSQL-anchored operation-time
+clarification below. The previous key remains available for age-valid operations that selected it.
 
-During overlap, each applicable policy derives and evaluates both the current-version bucket and the
-previous-version bucket for the same canonical identifier and window. Exhaustion of either bucket
-rejects the request. An allowed request increments both buckets by exactly one in the same database
+For an operation whose decision instant falls within the overlap, each applicable policy derives
+and evaluates both the current-version bucket and the previous-version bucket for the same canonical
+identifier and window. Exhaustion of either bucket rejects the request. An allowed request increments
+both buckets by exactly one in the same database
 transaction and deterministic lock order. The two counts are never added, summed, merged, or treated
 as one combined allowance. This dual evaluation and update prevents rotation from resetting an
 active limit.
 
-If the required previous key or version is unavailable during overlap, limiter evaluation fails
-closed before identity-lifecycle mutation and returns the endpoint-appropriate sanitized `503`.
-After the overlap and every old enforcement effect have ended, evaluation uses only the current key;
-retained old-version rows remain subject to ordinary cleanup and never restore allowance.
+If an operation's selected version set requires a previous key or version that is unavailable,
+limiter evaluation fails closed before identity-lifecycle mutation and returns the
+endpoint-appropriate sanitized `503`.
+An operation whose decision instant is at or after the overlap end uses only the current key. An
+earlier, still age-valid operation preserves the version set it selected, even when a later stage
+runs after the overlap end. Retained old-version rows remain subject to ordinary cleanup and never
+restore allowance.
 
 Startup validates that each required secret reference resolves, each decoded key is at least 32
 bytes, active current and previous versions differ, and the configured overlap lifecycle is complete.
@@ -1188,8 +1193,9 @@ Startup cannot prove randomness. Secure key generation is deployment evidence: t
 mechanism must create at least 32 random bytes with a cryptographically secure random generator,
 store them without revealing their values, and prohibit human-chosen passwords or predictable
 strings. Operators record generation method, key version, creation time, and activation time without
-recording a secret; rotation evidence confirms previous-key availability throughout overlap. Tests use
-unmistakably synthetic keys and verify length, separation, lifecycle, and behavior only—not
+recording a secret; rotation evidence confirms previous-key availability through the approved
+in-flight retirement boundary. Tests use unmistakably synthetic keys and verify length, separation,
+lifecycle, and behavior only—not
 statistical randomness.
 
 ### Approved Slice 5B HMAC and rotation implementation clarification — 2026-09-27
@@ -1259,16 +1265,14 @@ Exactly two structural configuration modes are valid:
    `previous-secret-ref`, `rotation-started-at`, and `overlap` are all present. The overlap is at
    least `PT25H`.
 
-Partial rotation configuration fails closed. When rate-limit policy configuration is implemented,
-startup validation must additionally prove that overlap covers the longest possible old-key
-enforcement effect required above. Slice 5B does not invent policy values or claim that
-cross-configuration proof.
+Partial rotation configuration fails closed. The later startup or configuration-reload validator
+must prove the cross-configuration overlap minimum specified in the approved PostgreSQL-anchored
+operation-time clarification below. Slice 5B does not invent policy values or claim that proof.
 
 For each active-version decision, the pure core receives one explicit non-null UTC `Instant`. It
 does not read the JVM wall clock, query PostgreSQL, or create or select a `Clock` bean. Future
-admission integration must capture one approved decision instant and reuse it for every HMAC-version
-decision for that operation. Selection of its production time source belongs to that later
-integration contract. Slice 5B tests may supply fixed instants.
+admission integration must supply the PostgreSQL-anchored operation instant specified below and
+reuse it for every HMAC-version decision in that operation. Slice 5B tests may supply fixed instants.
 
 For a complete rotation configuration, let `S = rotation-started-at`, `E = S + overlap`, and `T`
 be the explicit decision instant. Rotation snapshot construction and startup validation compute
@@ -1289,8 +1293,9 @@ end for each identifier. Active versions are exactly:
 | `T >= E` | Current only |
 
 Equality at `S` belongs to overlap; equality at `E` excludes the previous version. Complete
-previous-key fields may temporarily remain after `E`, but the previous key produces no digest at
-or after `E`. Current and previous digests remain independent and are never combined. A later
+previous-key fields may remain after `E`, but an operation whose decision instant is at or after `E`
+produces no previous digest. An earlier age-valid operation retains its selected version set across
+stages. Current and previous digests remain independent and are never combined. A later
 admission stage evaluates both active version buckets independently and atomically; exhaustion of
 either rejects the operation. Partial, malformed, short-key, duplicate-version, or identical-key
 configuration always fails closed.
@@ -1363,10 +1368,83 @@ including no zero-valued cooldown field. The bucket-retention offset is mandator
 durations exactly, without rounding, truncation, or silent normalization. Existing Slice 5A
 runtime/database behavior remains authoritative for applying them.
 
-This clarification adds no duration maximum, HMAC rotation-overlap validation, startup binding,
-secret-provider behavior, admission or servlet wiring, production-code default, migration, or other
-runtime requirement. The later cross-configuration proof that HMAC rotation overlap covers the
-longest old-key enforcement effect remains deferred.
+This Slice 5D clarification adds no duration maximum, HMAC rotation-overlap validation, startup
+binding, secret-provider behavior, admission or servlet wiring, production-code default, migration,
+or other runtime requirement. The subsequent approved clarification specifies the previously
+deferred cross-configuration proof; its implementation remains later work.
+
+#### Approved PostgreSQL-anchored operation time and HMAC rotation-overlap clarification — 2026-09-28
+
+This owner-approved clarification defines the production time and cross-configuration contract for
+future rate-limit admission integration. It does not implement admission, configuration binding,
+secret resolution, servlet adaptation, or deployment automation.
+
+**One operation instant and bounded stage age.** Each complete rate-limited operation obtains one
+decision instant `T₀` from PostgreSQL before its first coarse rate-limit stage. PostgreSQL is the
+authoritative time source: Java wall-clock, servlet, node-local, or independently sampled application
+time must not determine `T₀`. The same `T₀` is supplied explicitly to HMAC version selection and
+stage composition for every stage of that operation, including a later email stage. A later stage
+neither resamples nor replaces it. This does not create one database transaction across the complete
+operation. Slice 5A continues to obtain one independent PostgreSQL `transaction_timestamp()` for
+each stage transaction, named `Tₛ`: `T₀` selects the operation's HMAC version set, while `Tₛ`
+controls that stage's window, cooldown, `Retry-After`, and retention calculations.
+
+The fixed maximum operation age is `M = PT1H`. Before any bucket mutation in each stage, enforce
+`0 <= Tₛ - T₀ <= M` using the stage's PostgreSQL timestamp. Equality at either boundary is valid:
+`Tₛ = T₀` and `Tₛ - T₀ = PT1H` pass. `Tₛ < T₀` or `Tₛ - T₀ > PT1H` fails closed before that stage
+mutates a bucket. This failure uses one fixed sanitized internal error without identifiers, digests,
+addresses, emails, keys, SQL details, or timestamp values. A coarse stage that already committed is
+not refunded if a later stage fails this check.
+
+For the entire operation, `T₀ < S` selects previous only; `S <= T₀ < E` selects current then
+previous; and `T₀ >= E` selects current only. Every stage preserves the set and order selected at
+`T₀`, regardless of its `Tₛ`. Equality at `S` includes both versions; equality at `E` excludes the
+previous version. A stage never switches versions by comparing `Tₛ` with `S` or `E`.
+
+**Minimum overlap and arithmetic.** For each active FH-011 policy `p`, let `Wp` be its configured
+window and let `Cp` be its configured cooldown, or `PT0S` when absent. Define:
+
+```text
+H = max over all active FH-011 policies p of max(Wp, Cp)
+M = PT1H
+required_overlap = max(PT25H, H + M)
+configured_overlap >= required_overlap
+```
+
+`PT25H` is the fixed one-day-plus-one-hour safety floor. Only active enforcement windows and
+cooldowns contribute to `H`. The bucket-retention offset `D`, `retention_expires_at`, and cleanup
+time do not contribute to HMAC overlap. All additions and boundary calculations use
+overflow-detecting arithmetic. An unrepresentable `H + M`, `S + overlap`, `E + M`, or related
+boundary fails closed with a fixed sanitized configuration error. Slice 5D does not perform this
+cross-component validation. A future startup or configuration-reload validator with both validated
+policy settings and the validated rotation snapshot enforces it before serving traffic.
+
+**Previous-key and snapshot lifecycle.** The previous key must not be removed before
+`E + M = E + PT1H`. Retirement at or after that boundary is permitted only when all serving
+instances use the approved current snapshot and no valid operation with `T₀ < E` remains in flight.
+Retirement must not cause an otherwise age-valid operation to lose a version selected at its `T₀`.
+Each operation acquires one validated rotation snapshot and one `T₀` before its first
+protected-identifier derivation. Every derivation for that operation uses that same snapshot and
+`T₀`. Publish each validated snapshot atomically. Replacing the published snapshot must not mutate
+an acquired snapshot. Do not clear an old snapshot or its keys while an operation still owns or uses
+it; release or close it only after that operation no longer needs to derive stage identifiers.
+Use-after-close, partial replacement, and mixed-snapshot derivation are prohibited. Reference
+counting, leases, or an equivalent safe mechanism may be selected during future wiring. Lifecycle
+and resolver failures fail closed with fixed sanitized diagnostics.
+
+**Multi-instance rollout barrier.** Before activation, every serving instance loads and validates
+the same rotation snapshot and policy configuration, proves readiness for all required current and
+previous key references, and passes the same overlap validation. An instance without that readiness
+must not receive FH-011 traffic. Activation must not proceed while any serving instance has
+incompatible policy horizons, overlap, versions, key references, `S`, or `E`. During rotation every
+instance uses the same `S`, `E`, version identifiers, key references, `M`, and overlap-validation
+result; a stale or incompatible instance fails readiness and must not serve FH-011 traffic.
+
+Before retiring the previous key, time is at or after `E + M`, all serving instances have atomically
+advanced to a snapshot that does not select the retiring key for new operations, no valid in-flight
+operation still owns a snapshot selecting it, and retirement is coordinated across instances. The
+concrete provider, reference-counting mechanism, deployment automation, and rollout coordinator
+remain deferred; the barrier itself is mandatory.
 
 ## Public endpoint security
 
@@ -1492,7 +1570,7 @@ property appears nowhere else in the configuration inventory.
 | `fixhub.identity.rate-limit.hmac.current-secret-ref` | secret reference | Yes | no default | Resolves to >=32 bytes | Reference/decoded length | Yes | Identity; security approval for rotation |
 | `fixhub.identity.rate-limit.hmac.previous-secret-ref` | secret reference | Conditional | no default | Resolves to >=32 bytes during overlap | Required/resolvable during overlap | Yes | Identity; security approval for rotation |
 | `fixhub.identity.rate-limit.hmac.rotation-started-at` | UTC instant | Conditional | no default | Required only in overlap | Paired lifecycle fields | No | Identity; security approval for rotation |
-| `fixhub.identity.rate-limit.hmac.overlap` | duration | Conditional | no default | `>=PT25H` | Paired lifecycle fields | No | Identity; security approval; no early removal |
+| `fixhub.identity.rate-limit.hmac.overlap` | duration | Conditional | no default | `>=max(PT25H, H + PT1H)` under the approved operation-time clarification | Paired lifecycle fields; validate against all active policy settings before serving | No | Identity; security approval; no early removal |
 | `fixhub.identity.ingress.mode` | enum | Yes | `DIRECT` | `DIRECT` or `PROXIED` | `DIRECT` forbids both proxied-only fields; `PROXIED` requires both; no production default | No | Identity; security/operations approval |
 | `fixhub.identity.ingress.forwarding-header-family` | enum | Conditional | no default | `FORWARDED` or `X_FORWARDED` | Required only in `PROXIED`; absent in `DIRECT` | No | Identity; security/operations approval |
 | `fixhub.identity.ingress.trusted-cidrs` | CIDR list | Conditional | no default | 1..64 canonical, nonoverlapping CIDRs under the Slice 5C clarification | Required only in `PROXIED`; absent in `DIRECT`; no `/0` | No | Identity; security/operations approval |
@@ -1549,7 +1627,10 @@ Unit tests cover:
   states.
 - Token generation length/encoding/digest behavior and every terminal transition.
 - Rate-window, cooldown, longest-wait, HMAC-key-version, current/previous-key overlap, dual-bucket
-  evaluation without counter addition, and cleanup calculations using an injected clock.
+  evaluation without counter addition, and cleanup calculations using injected test instants.
+- PostgreSQL-anchored `T₀` reused across stages; per-stage `Tₛ` age checks at zero, `PT1H`, and
+  immediately outside both bounds; exact rotation boundaries; overflow-safe overlap proof against
+  all active policy settings; and safe in-flight snapshot replacement and retirement.
 - Trusted frontend and direct/proxied ingress-profile validation, including untrusted-peer ignoring
   and trusted-peer missing, malformed, duplicate, and ambiguous forwarding failures.
 - Configuration binding tests accept only the table's valid development values and fail startup for
@@ -1627,7 +1708,9 @@ Integration tests reuse the project's PostgreSQL Testcontainer and verify:
   cooldowns.
 - HMAC rotation tests prove that both key-version buckets are evaluated and atomically incremented
   during overlap, either exhausted bucket rejects, counters are never combined, the previous key is
-  retained for at least 25 hours, and a missing required key fails closed.
+  retained through `E + PT1H` while required by age-valid operations, and a missing required key
+  fails closed. Cross-configuration tests prove `configured_overlap >= max(PT25H, H + PT1H)` before
+  traffic and reject overflow or incompatible serving-instance configuration.
 - Production-readiness evidence validates origin limits against representative carrier-grade NAT,
   enterprise, campus, IPv4, and IPv6 shared-origin scenarios before those limits are enabled.
 
