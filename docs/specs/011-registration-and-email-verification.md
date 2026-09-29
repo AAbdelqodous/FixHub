@@ -1389,12 +1389,61 @@ operation. Slice 5A continues to obtain one independent PostgreSQL `transaction_
 each stage transaction, named `Tₛ`: `T₀` selects the operation's HMAC version set, while `Tₛ`
 controls that stage's window, cooldown, `Retry-After`, and retention calculations.
 
+**Approved Slice 5F `T₀` acquisition transaction — 2026-09-29.** A non-transactional internal
+facade acquires `T₀`. Before acquisition, it checks Spring's actual-transaction state and rejects
+an active actual caller transaction; annotation presence or transaction-synchronization state alone
+is not the check. The facade invokes a separate Spring-managed transactional collaborator, not a
+self-invoked method. That collaborator owns one short, read-only Spring transaction. With no active
+caller transaction, ordinary required propagation creates the acquisition transaction; `REQUIRES_NEW`
+must not suspend a caller transaction to bypass the facade's rejection. The transaction performs
+exactly one authoritative PostgreSQL timestamp read using `SELECT transaction_timestamp()` for the
+returned `T₀`. The transactional collaborator returns that candidate timestamp through its Spring
+proxy. The non-transactional facade exposes `T₀` only after the proxy completes successfully.
+The returned PostgreSQL value is preserved exactly: do not round, truncate, resample, or replace it.
+No Java `Clock`, `Instant.now()`, servlet timestamp, node-local clock, retry, or fallback time source
+may determine it. Null, missing, malformed, or unmappable timestamp results fail closed. A query,
+transaction-begin, transaction-completion, commit, connection, mapping, or infrastructure failure
+yields no partial or candidate `T₀`. The facade converts these failures to one fixed sanitized
+internal failure without retaining the database exception as its cause or revealing SQL, PostgreSQL
+`DETAIL`, connection information, timestamp values, identifiers, digests, addresses, emails, key
+references, or key material.
+
+The isolated Slice 5F operation-time value contains only `T₀`. It is package-private, final,
+immutable, and non-record; owns no key or HMAC snapshot; has value-free rendering; and exposes only
+the narrow access needed by internal collaborators. It may be supplied to every stage of one future
+operation. The request-level caller that guarantees one acquisition and reuse across the complete
+operation remains deferred.
+
 The fixed maximum operation age is `M = PT1H`. Before any bucket mutation in each stage, enforce
 `0 <= Tₛ - T₀ <= M` using the stage's PostgreSQL timestamp. Equality at either boundary is valid:
 `Tₛ = T₀` and `Tₛ - T₀ = PT1H` pass. `Tₛ < T₀` or `Tₛ - T₀ > PT1H` fails closed before that stage
 mutates a bucket. This failure uses one fixed sanitized internal error without identifiers, digests,
 addresses, emails, keys, SQL details, or timestamp values. A coarse stage that already committed is
 not refunded if a later stage fails this check.
+
+Slice 5F extends Slice 5A so every production stage evaluation and its package-private writer
+boundary require the operation-time value; no optional or unchecked production overload may omit it.
+The transactional writer samples its existing PostgreSQL `Tₛ` and validates
+`0 <= Tₛ - T₀ <= PT1H` immediately afterward, before attempt construction or any bucket upsert.
+`Tₛ = T₀` and `Tₛ = T₀ + PT1H` pass; `Tₛ < T₀` and `Tₛ > T₀ + PT1H` fail. The comparison must
+be overflow-safe without constructing an unrepresentable `T₀ + PT1H`. Invalid age fails and rolls
+back that stage without bucket mutation; an earlier committed coarse stage is not refunded. `Tₛ`
+remains authoritative for windows, cooldowns, retry waits, and retention. `T₀` remains authoritative
+for HMAC version selection; `Tₛ` must not select a replacement version set. Failures use fixed
+sanitized diagnostics without timestamps or protected data.
+
+Slice 5F tests prove rejection of null values; both inclusive age boundaries; negative and excessive
+age; overflow safety at extreme instants; exactly one real PostgreSQL timestamp query per acquisition;
+ownership of the read transaction by a real Spring proxy; and facade return only after successful
+transaction completion. They also prove that an active caller transaction is rejected before a query,
+query or completion failure exposes no `T₀`, every stage samples a new `Tₛ`, age rejection precedes
+every upsert and leaves that stage unchanged, and committed coarse consumption remains after a later
+rejection. Diagnostics must disclose no SQL detail, timestamp, identifier, digest, address, email,
+or key.
+
+Slice 5F does not implement request coordination, registration wiring, servlet behavior, snapshot
+leasing, secret resolution, overlap startup validation, configuration binding, rollout, retries,
+logging, migrations, or dependencies.
 
 For the entire operation, `T₀ < S` selects previous only; `S <= T₀ < E` selects current then
 previous; and `T₀ >= E` selects current only. Every stage preserves the set and order selected at
