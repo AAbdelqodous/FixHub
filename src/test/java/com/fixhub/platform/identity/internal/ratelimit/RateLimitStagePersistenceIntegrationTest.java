@@ -378,6 +378,7 @@ class RateLimitStagePersistenceIntegrationTest {
     void activeCallerTransactionFailsBeforeWriterAndLeavesCallerTransactionIntact() {
         byte[] digest = digest();
         var item = input(RateLimitPolicy.REGISTRATION_EMAIL, 1, digest, HOUR, 1, null);
+        RateLimitOperationTime operationTime = operationTime();
         AtomicBoolean afterCommit = new AtomicBoolean();
         assertThat(AopUtils.isAopProxy(writer)).isTrue();
         transactions.executeWithoutResult(
@@ -396,13 +397,14 @@ class RateLimitStagePersistenceIntegrationTest {
                             });
                     assertThatThrownBy(
                                     () ->
-                                            evaluate(
+                                            facade.evaluate(
                                                     RateLimitStagePersistence.Stage
                                                             .REGISTRATION_EMAIL,
-                                                    item))
+                                                    List.of(item),
+                                                    operationTime))
                             .isInstanceOf(IllegalStateException.class)
                             .hasMessage("Rate-limit stage requires no active caller transaction");
-                    assertThatThrownBy(() -> facade.evaluate(null, null))
+                    assertThatThrownBy(() -> facade.evaluate(null, null, operationTime))
                             .isInstanceOf(IllegalStateException.class)
                             .hasMessage("Rate-limit stage requires no active caller transaction");
                     assertThat(
@@ -489,7 +491,7 @@ class RateLimitStagePersistenceIntegrationTest {
         RateLimitStagePersistence.StageWork work = constructor.newInstance(unsorted);
         try {
             assertThat(AopUtils.isAopProxy(writer)).isTrue();
-            writer.execute(work);
+            writer.execute(work, operationTime());
             assertThat(observedLeadingBytes).containsExactly(0, 127, 128, 255);
             assertThat(
                             jdbc.query(
@@ -867,15 +869,219 @@ class RateLimitStagePersistenceIntegrationTest {
         }
     }
 
+    @Test
+    void stageAgeRejectsBothOutsideBoundariesBeforeAnyUpsert() {
+        RateLimitOperationTime operationTime = operationTime();
+        byte[] beforeDigest = digest();
+        byte[] afterDigest = digest();
+
+        assertAgeFailureBeforeUpsert(
+                operationTime, operationTime.instant().minusNanos(1), beforeDigest);
+        reset(jdbc);
+        assertAgeFailureBeforeUpsert(
+                operationTime, operationTime.instant().plusSeconds(3600).plusNanos(1), afterDigest);
+    }
+
+    @Test
+    void stageAgeAcceptsBothInclusiveBoundaries() {
+        RateLimitOperationTime operationTime = operationTime();
+        byte[] first = digest();
+        byte[] second = digest();
+        stubStageInstant(operationTime.instant());
+        assertThat(
+                        facade.evaluate(
+                                        RateLimitStagePersistence.Stage.REGISTRATION_EMAIL,
+                                        List.of(
+                                                input(
+                                                        RateLimitPolicy.REGISTRATION_EMAIL,
+                                                        1,
+                                                        first,
+                                                        HOUR,
+                                                        5,
+                                                        null)),
+                                        operationTime)
+                                .isAdmitted())
+                .isTrue();
+        reset(jdbc);
+        stubStageInstant(operationTime.instant().plusSeconds(3600));
+        assertThat(
+                        facade.evaluate(
+                                        RateLimitStagePersistence.Stage.REGISTRATION_EMAIL,
+                                        List.of(
+                                                input(
+                                                        RateLimitPolicy.REGISTRATION_EMAIL,
+                                                        1,
+                                                        second,
+                                                        HOUR,
+                                                        5,
+                                                        null)),
+                                        operationTime)
+                                .isAdmitted())
+                .isTrue();
+        assertThat(count(first)).isEqualTo(1);
+        assertThat(count(second)).isEqualTo(1);
+    }
+
+    @Test
+    void laterAgeRejectionDoesNotRefundCommittedCoarseStage() {
+        RateLimitOperationTime operationTime = operationTime();
+        byte[] originDigest = digest();
+        byte[] globalDigest = digest();
+        byte[] emailDigest = digest();
+        List<RateLimitStagePersistence.BucketInput> coarse =
+                List.of(
+                        input(RateLimitPolicy.REGISTRATION_ORIGIN, 1, originDigest, HOUR, 5, null),
+                        input(RateLimitPolicy.FH011_GLOBAL, 1, globalDigest, HOUR, 5, null));
+        assertThat(
+                        facade.evaluate(
+                                        RateLimitStagePersistence.Stage.REGISTRATION_COARSE,
+                                        coarse,
+                                        operationTime)
+                                .isAdmitted())
+                .isTrue();
+
+        stubStageInstant(operationTime.instant().plusSeconds(3600).plusNanos(1));
+        assertThatThrownBy(
+                        () ->
+                                facade.evaluate(
+                                        RateLimitStagePersistence.Stage.REGISTRATION_EMAIL,
+                                        List.of(
+                                                input(
+                                                        RateLimitPolicy.REGISTRATION_EMAIL,
+                                                        1,
+                                                        emailDigest,
+                                                        HOUR,
+                                                        5,
+                                                        null)),
+                                        operationTime))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Invalid rate-limit operation time")
+                .hasNoCause();
+        assertThat(count(originDigest)).isEqualTo(1);
+        assertThat(count(globalDigest)).isEqualTo(1);
+        assertThat(count(emailDigest)).isZero();
+    }
+
+    @Test
+    void coarseAndEmailStagesReuseOperationTimeButSampleSeparateStageTimes() {
+        RateLimitOperationTime operationTime = operationTime();
+        byte[] originDigest = digest();
+        byte[] globalDigest = digest();
+        byte[] emailDigest = digest();
+        AtomicInteger stageClockReads = new AtomicInteger();
+        doAnswer(
+                        invocation -> {
+                            stageClockReads.incrementAndGet();
+                            return invocation.callRealMethod();
+                        })
+                .when(jdbc)
+                .queryForObject(
+                        eq(TransactionalRateLimitStageWriter.TIMESTAMP_SQL), any(RowMapper.class));
+
+        assertThat(
+                        facade.evaluate(
+                                        RateLimitStagePersistence.Stage.REGISTRATION_COARSE,
+                                        List.of(
+                                                input(
+                                                        RateLimitPolicy.REGISTRATION_ORIGIN,
+                                                        1,
+                                                        originDigest,
+                                                        HOUR,
+                                                        5,
+                                                        null),
+                                                input(
+                                                        RateLimitPolicy.FH011_GLOBAL,
+                                                        1,
+                                                        globalDigest,
+                                                        HOUR,
+                                                        5,
+                                                        null)),
+                                        operationTime)
+                                .isAdmitted())
+                .isTrue();
+        assertThat(
+                        facade.evaluate(
+                                        RateLimitStagePersistence.Stage.REGISTRATION_EMAIL,
+                                        List.of(
+                                                input(
+                                                        RateLimitPolicy.REGISTRATION_EMAIL,
+                                                        1,
+                                                        emailDigest,
+                                                        HOUR,
+                                                        5,
+                                                        null)),
+                                        operationTime)
+                                .isAdmitted())
+                .isTrue();
+        assertThat(stageClockReads).hasValue(2);
+    }
+
+    private void assertAgeFailureBeforeUpsert(
+            RateLimitOperationTime operationTime, Instant stageInstant, byte[] digest) {
+        AtomicInteger completion = new AtomicInteger(-1);
+        doAnswer(
+                        invocation -> {
+                            TransactionSynchronizationManager.registerSynchronization(
+                                    new TransactionSynchronization() {
+                                        @Override
+                                        public void afterCompletion(int status) {
+                                            completion.set(status);
+                                        }
+                                    });
+                            return stageInstant;
+                        })
+                .when(jdbc)
+                .queryForObject(
+                        eq(TransactionalRateLimitStageWriter.TIMESTAMP_SQL), any(RowMapper.class));
+        assertThatThrownBy(
+                        () ->
+                                facade.evaluate(
+                                        RateLimitStagePersistence.Stage.REGISTRATION_EMAIL,
+                                        List.of(
+                                                input(
+                                                        RateLimitPolicy.REGISTRATION_EMAIL,
+                                                        1,
+                                                        digest,
+                                                        HOUR,
+                                                        5,
+                                                        null)),
+                                        operationTime))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Invalid rate-limit operation time")
+                .hasNoCause();
+        assertThat(completion).hasValue(TransactionSynchronization.STATUS_ROLLED_BACK);
+        verify(jdbc, never())
+                .query(
+                        eq(TransactionalRateLimitStageWriter.UPSERT_SQL),
+                        any(PreparedStatementSetter.class),
+                        any(RowMapper.class));
+        assertThat(count(digest)).isZero();
+    }
+
+    private void stubStageInstant(Instant stageInstant) {
+        doAnswer(invocation -> stageInstant)
+                .when(jdbc)
+                .queryForObject(
+                        eq(TransactionalRateLimitStageWriter.TIMESTAMP_SQL), any(RowMapper.class));
+    }
+
     private RateLimitStagePersistence.StageResult evaluate(
             RateLimitStagePersistence.Stage stage, RateLimitStagePersistence.BucketInput item) {
-        return facade.evaluate(stage, List.of(item));
+        return facade.evaluate(stage, List.of(item), operationTime());
     }
 
     private RateLimitStagePersistence.StageResult evaluate(
             RateLimitStagePersistence.Stage stage,
             List<RateLimitStagePersistence.BucketInput> items) {
-        return facade.evaluate(stage, items);
+        return facade.evaluate(stage, items, operationTime());
+    }
+
+    private RateLimitOperationTime operationTime() {
+        Timestamp timestamp =
+                jdbc.queryForObject(
+                        "SELECT transaction_timestamp() AS test_operation_instant",
+                        Timestamp.class);
+        return new RateLimitOperationTime(timestamp.toInstant());
     }
 
     private static RateLimitStagePersistence.BucketInput input(

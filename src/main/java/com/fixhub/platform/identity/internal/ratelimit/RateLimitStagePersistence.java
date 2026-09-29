@@ -21,14 +21,18 @@ final class RateLimitStagePersistence {
         this.writer = Objects.requireNonNull(writer);
     }
 
-    StageResult evaluate(Stage stage, List<BucketInput> inputs) {
+    StageResult evaluate(
+            Stage stage, List<BucketInput> inputs, RateLimitOperationTime operationTime) {
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
             throw new IllegalStateException(
                     "Rate-limit stage requires no active caller transaction");
         }
+        if (operationTime == null) {
+            throw RateLimitOperationTime.invalidStageTime();
+        }
         StageWork work = StageWork.create(stage, inputs);
         try {
-            writer.execute(work);
+            writer.execute(work, operationTime);
             return StageResult.admitted();
         } catch (StageRejected rejected) {
             return StageResult.rejected(rejected.retryAfterSeconds());
@@ -241,7 +245,7 @@ final class RateLimitStagePersistence {
 @FunctionalInterface
 interface RateLimitStageWriter {
 
-    void execute(RateLimitStagePersistence.StageWork work);
+    void execute(RateLimitStagePersistence.StageWork work, RateLimitOperationTime operationTime);
 }
 
 final class StageRejected extends RuntimeException {

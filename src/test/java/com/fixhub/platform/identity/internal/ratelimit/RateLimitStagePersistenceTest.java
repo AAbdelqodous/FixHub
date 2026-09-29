@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -13,6 +14,8 @@ class RateLimitStagePersistenceTest {
 
     private static final Duration HOUR = Duration.ofHours(1);
     private static final Duration RETENTION = Duration.ofDays(2);
+    private static final RateLimitOperationTime OPERATION_TIME =
+            new RateLimitOperationTime(Instant.EPOCH);
 
     @Test
     void exposesExactlyTheApprovedPolicyNames() {
@@ -114,13 +117,13 @@ class RateLimitStagePersistenceTest {
                 input(RateLimitPolicy.REGISTRATION_ORIGIN, 1, digest(2));
         RateLimitStagePersistence facade =
                 new RateLimitStagePersistence(
-                        work -> {
+                        (work, operationTime) -> {
                             throw new AssertionError("Writer reached");
                         });
         RateLimitStagePersistence.Stage stage = RateLimitStagePersistence.Stage.REGISTRATION_COARSE;
-        assertThatThrownBy(() -> facade.evaluate(stage, List.of(global)))
+        assertThatThrownBy(() -> facade.evaluate(stage, List.of(global), OPERATION_TIME))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> facade.evaluate(stage, List.of(global, global)))
+        assertThatThrownBy(() -> facade.evaluate(stage, List.of(global, global), OPERATION_TIME))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(
                         () ->
@@ -137,12 +140,15 @@ class RateLimitStagePersistenceTest {
                                                         HOUR,
                                                         6,
                                                         null,
-                                                        RETENTION))))
+                                                        RETENTION)),
+                                        OPERATION_TIME))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(
                         () ->
                                 facade.evaluate(
-                                        stage, List.of(global, origin, global, origin, global)))
+                                        stage,
+                                        List.of(global, origin, global, origin, global),
+                                        OPERATION_TIME))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -151,14 +157,15 @@ class RateLimitStagePersistenceTest {
         AtomicInteger calls = new AtomicInteger();
         RateLimitStagePersistence facade =
                 new RateLimitStagePersistence(
-                        work -> {
+                        (work, operationTime) -> {
                             calls.incrementAndGet();
                             throw new StageRejected(9);
                         });
         RateLimitStagePersistence.StageResult result =
                 facade.evaluate(
                         RateLimitStagePersistence.Stage.REGISTRATION_EMAIL,
-                        List.of(input(RateLimitPolicy.REGISTRATION_EMAIL, 1, digest(1))));
+                        List.of(input(RateLimitPolicy.REGISTRATION_EMAIL, 1, digest(1))),
+                        OPERATION_TIME);
         assertThat(calls).hasValue(1);
         assertThat(result.isAdmitted()).isFalse();
         assertThat(result.retryAfterSeconds()).isEqualTo(9);
@@ -166,7 +173,7 @@ class RateLimitStagePersistenceTest {
         assertThatThrownBy(
                         () ->
                                 new RateLimitStagePersistence(
-                                                work -> {
+                                                (work, operationTime) -> {
                                                     throw new IllegalStateException(
                                                             "synthetic failure");
                                                 })
@@ -176,8 +183,31 @@ class RateLimitStagePersistenceTest {
                                                         input(
                                                                 RateLimitPolicy.REGISTRATION_EMAIL,
                                                                 1,
-                                                                digest(2)))))
+                                                                digest(2))),
+                                                OPERATION_TIME))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void rejectsMissingOperationTimeBeforeWriter() {
+        RateLimitStagePersistence facade =
+                new RateLimitStagePersistence(
+                        (work, operationTime) -> {
+                            throw new AssertionError("Writer reached");
+                        });
+        assertThatThrownBy(
+                        () ->
+                                facade.evaluate(
+                                        RateLimitStagePersistence.Stage.REGISTRATION_EMAIL,
+                                        List.of(
+                                                input(
+                                                        RateLimitPolicy.REGISTRATION_EMAIL,
+                                                        1,
+                                                        digest(1))),
+                                        null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Invalid rate-limit operation time")
+                .hasNoCause();
     }
 
     private static RateLimitStagePersistence.BucketInput input(

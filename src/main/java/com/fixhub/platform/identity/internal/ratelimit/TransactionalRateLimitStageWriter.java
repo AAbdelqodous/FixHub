@@ -58,7 +58,11 @@ class TransactionalRateLimitStageWriter implements RateLimitStageWriter {
 
     @Override
     @Transactional
-    public void execute(RateLimitStagePersistence.StageWork work) {
+    public void execute(
+            RateLimitStagePersistence.StageWork work, RateLimitOperationTime operationTime) {
+        if (operationTime == null) {
+            throw RateLimitOperationTime.invalidStageTime();
+        }
         Instant transactionInstant =
                 jdbcTemplate.queryForObject(
                         TIMESTAMP_SQL,
@@ -66,6 +70,7 @@ class TransactionalRateLimitStageWriter implements RateLimitStageWriter {
         if (transactionInstant == null) {
             throw new IllegalStateException("Rate-limit transaction clock is unavailable");
         }
+        operationTime.requireValidStageInstant(transactionInstant);
         List<Attempt> attempts = new ArrayList<>(work.buckets().size());
         for (RateLimitStagePersistence.BucketWork bucket : work.buckets()) {
             attempts.add(new Attempt(bucket, transactionInstant));
